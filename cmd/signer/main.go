@@ -21,6 +21,7 @@ import (
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	"github.com/redhat-marketplace/redhat-marketplace-operator/cmd/signer/sign"
+	"github.com/redhat-marketplace/redhat-marketplace-operator/cmd/signer/verify"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -41,6 +42,7 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	rootCmd.AddCommand(sign.SignCmd)
+	rootCmd.AddCommand(verify.VerifyCmd)
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.cobra.yaml)")
 	rootCmd.PersistentFlags().AddFlagSet(zap.FlagSet())
 }
