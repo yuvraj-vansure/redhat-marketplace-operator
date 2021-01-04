@@ -83,49 +83,13 @@ func PrivateKeyFromPemFile(privateKeyFile string, privateKeyPassword string) (*r
 	return privateKey, nil
 }
 
-func PublicKeyFromPemFile(publicKeyFile string) (*rsa.PublicKey, error) {
-	pubPEMData, err := ioutil.ReadFile(publicKeyFile)
-	if err != nil {
-		return nil, errors.Wrap(err, "Unable to read public key file")
-	}
-
-	block, _ := pem.Decode(pubPEMData)
-	if block == nil || block.Type != "PUBLIC KEY" {
-		return nil, errors.Wrap(err, "failed to decode PEM block containing public key")
-	}
-
-	parsedPublicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse public key block")
-	}
-
-	var publicKey *rsa.PublicKey
-	var ok bool
-	publicKey, ok = parsedPublicKey.(*rsa.PublicKey)
-	if !ok {
-		return nil, errors.Wrap(err, "Unable to parse public key")
-	}
-
-	return publicKey, nil
-}
-
 func CertificateFromPemFile(pemFile string) (*x509.Certificate, error) {
 	pemData, err := ioutil.ReadFile(pemFile)
 	if err != nil {
 		return nil, errors.Wrap(err, "Unable to read pem file")
 	}
 
-	block, _ := pem.Decode(pemData)
-	if block == nil {
-		return nil, errors.New("failed to decode certificate PEM")
-	}
-
-	cert, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse certificate block")
-	}
-
-	return cert, nil
+	return CertificateFromPemBytes(pemData)
 }
 
 func CertificateFromPemBytes(pemData []byte) (*x509.Certificate, error) {
@@ -139,7 +103,13 @@ func CertificateFromPemBytes(pemData []byte) (*x509.Certificate, error) {
 		return nil, errors.Wrap(err, "failed to parse certificate block")
 	}
 
-	return cert, nil
+	pub := cert.PublicKey
+	switch pub.(type) {
+	case *rsa.PublicKey:
+		return cert, nil
+	default:
+		return nil, errors.New("Certificate PublicKey is not RSA. Only RSA is supported.")
+	}
 }
 
 // This should be the bytes we sign, or verify signature on
