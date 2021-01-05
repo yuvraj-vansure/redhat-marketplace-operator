@@ -185,12 +185,13 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
+	ns := utils.Getenv("POD_NAMESPACE", "openshift-redhat-marketplace")
 	mapFn := handler.ToRequestsFunc(
 		func(a handler.MapObject) []reconcile.Request {
 			return []reconcile.Request{
 				{NamespacedName: types.NamespacedName{
 					Name:      "rhm-marketplaceconfig-meterbase",
-					Namespace: "openshift-redhat-marketplace",
+					Namespace: ns,
 				}},
 			}
 		})

@@ -86,7 +86,7 @@ var _ = Describe("MeterReportController", func() {
 			meterreport = &v1alpha1.MeterReport{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
-					Namespace: "openshift-redhat-marketplace",
+					Namespace: Namespace,
 				},
 				Spec: v1alpha1.MeterReportSpec{
 					StartTime: metav1.NewTime(start),

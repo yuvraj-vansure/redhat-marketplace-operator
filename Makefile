@@ -339,7 +339,7 @@ setup-kind: ## setup the kind cluster for integration test; requires .docker/con
 	@- $(kind) export kubeconfig --name  $(KIND_CLUSTER_NAME)
 	@- make kind-certs
 	@- operator-sdk olm install
-	@- echo "openshift-monitoring openshift-config-managed openshift-config openshift-redhat-marketplace openshift-marketplace" | xargs -n 1 kubectl create ns
+	@- echo "openshift-monitoring openshift-config-managed openshift-config $(NAMESPACE) openshift-marketplace" | xargs -n 1 kubectl create ns
 	@- find | grep test/testdata | grep monitoring | xargs -n 1 kubectl apply -f
 	@- helm repo add bitnami https://charts.bitnami.com/bitnami --force-update
 	@- helm install kube-state-metrics bitnami/kube-state-metrics -n openshift-monitoring --set namespace=openshift-monitoring,serviceMonitor.enabled=true,serviceMonitor.namespace=openshift-monitoring,fullnameOverride=kube-state-metrics
@@ -356,7 +356,7 @@ kind-certs:
 	@cd test/certs && $(cfssl) gencert -ca=ca.crt -ca-key=ca.key -profile=kubernetes marketplace-csr.json | $(cfssljson) -bare server
 
  test-ci-int-kind: ## test integration using kind
-	PULL_SECRET_NAME=regcred IS_KIND=true kubectl kuttl test --namespace openshift-redhat-marketplace --kind-context test --config ./kuttl-test-kind.yaml ./test/e2e --test ^register-test$
+	PULL_SECRET_NAME=regcred IS_KIND=true kubectl kuttl test --namespace $(NAMESPACE) --kind-context test --config ./kuttl-test-kind.yaml ./test/e2e --test ^register-test$
 
 .PHONY: test-cover
 test-cover: ## Run coverage on code
@@ -376,7 +376,7 @@ test-ci-unit: ## test-ci-unit runs all tests for CI builds
 
 .PHONY: test-ci-int
 test-ci-int:  ## test-ci-int runs all tests for CI builds
-	kubectl kuttl test --namespace openshift-redhat-marketplace --kind-context test --config ./kuttl-test-kind.yaml ./test/e2e --test "(^register-test$$|^features-test$$)"
+	kubectl kuttl test --namespace $(NAMESPACE) --kind-context test --config ./kuttl-test-kind.yaml ./test/e2e --test "(^register-test$$|^features-test$$)"
 
 
 CLUSTER_TYPE ?= kind

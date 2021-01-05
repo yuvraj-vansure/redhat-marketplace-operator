@@ -15,6 +15,7 @@
 package controller_test
 
 import (
+	"flag"
 	"fmt"
 	"testing"
 
@@ -35,9 +36,11 @@ import (
 	"github.com/redhat-marketplace/redhat-marketplace-operator/test/testenv"
 )
 
-const (
-	Namespace = "openshift-redhat-marketplace"
-)
+var Namespace string
+
+func init() {
+	flag.StringVar(&Namespace, "namespace", "openshift-redhat-marketplace", "The namespace the tests should be executed in")
+}
 
 var (
 	cfg         *rest.Config
@@ -61,7 +64,7 @@ var _ = BeforeSuite(func() {
 	By("setting up env")
 	testHarness, err = harness.NewTestHarness(harness.TestHarnessOptions{
 		EnabledFeatures: []string{},
-		Namespace:       "openshift-redhat-marketplace",
+		Namespace:       Namespace,
 		WatchNamespace:  "",
 		ProvideScheme:   testenv.InitializeScheme,
 	})

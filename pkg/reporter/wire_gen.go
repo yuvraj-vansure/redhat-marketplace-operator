@@ -81,7 +81,7 @@ func NewReporter(task *Task) (*MarketplaceReporter, error) {
 	if err != nil {
 		return nil, err
 	}
-	marketplaceConfig, err := getMarketplaceConfig(contextContext, clientCommandRunner)
+	marketplaceConfig, err := getMarketplaceConfig(contextContext, clientCommandRunner, reportName)
 	if err != nil {
 		return nil, err
 	}
