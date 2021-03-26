@@ -26,6 +26,7 @@ import (
 
 type File interface {
 	SaveFile(finfo *v1.FileInfo, bs []byte) error
+	FetchFile(finfo *v1.FileID) (models.Metadata, error)
 }
 
 type Database struct {
@@ -74,4 +75,32 @@ func (d *Database) SaveFile(finfo *v1.FileInfo, bs []byte) error {
 
 	d.Log.Info(fmt.Sprintf("File of size: %v saved with id: %v", metadata.Size, metadata.FileID))
 	return nil
+}
+
+func (d *Database) FetchFile(finfo *v1.FileID) (models.Metadata, error) {
+
+	var meta models.Metadata
+	var filename string
+	var fileid string
+
+	res := d.DB
+
+	if len(strings.TrimSpace(finfo.GetId())) != 0 {
+
+		fileid = strings.TrimSpace(finfo.GetId())
+		res = d.DB.Where("provided_id = ?", fileid).Order("created_at desc").Preload("File").First(&meta)
+
+	} else if len(strings.TrimSpace(finfo.GetName())) != 0 {
+
+		filename = strings.TrimSpace(finfo.GetName())
+		res = d.DB.Where("provided_name = ?", filename).Order("created_at desc").Preload("File").First(&meta)
+
+	} else {
+		return meta, fmt.Errorf("file id/name is blank")
+	}
+	if res.RowsAffected == 0 {
+		er := "No File found with name: " + filename
+		return meta, fmt.Errorf(er)
+	}
+	return meta, nil
 }
