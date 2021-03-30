@@ -16,6 +16,7 @@ package database
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -26,7 +27,7 @@ import (
 
 type File interface {
 	SaveFile(finfo *v1.FileInfo, bs []byte) error
-	FetchFile(finfo *v1.FileID) (models.Metadata, error)
+	DownloadFile(finfo *v1.FileID) (models.Metadata, error)
 }
 
 type Database struct {
@@ -77,30 +78,25 @@ func (d *Database) SaveFile(finfo *v1.FileInfo, bs []byte) error {
 	return nil
 }
 
-func (d *Database) FetchFile(finfo *v1.FileID) (models.Metadata, error) {
+func (d *Database) DownloadFile(finfo *v1.FileID) (models.Metadata, error) {
 
 	var meta models.Metadata
-	var filename string
-	var fileid string
 
-	res := d.DB
+	fileid := strings.TrimSpace(finfo.GetId())
+	filename := strings.TrimSpace(finfo.GetName())
 
-	if len(strings.TrimSpace(finfo.GetId())) != 0 {
-
-		fileid = strings.TrimSpace(finfo.GetId())
-		res = d.DB.Where("provided_id = ?", fileid).Order("created_at desc").Preload("File").First(&meta)
-
-	} else if len(strings.TrimSpace(finfo.GetName())) != 0 {
-
-		filename = strings.TrimSpace(finfo.GetName())
-		res = d.DB.Where("provided_name = ?", filename).Order("created_at desc").Preload("File").First(&meta)
-
+	if len(fileid) != 0 {
+		d.DB.Where("provided_id = ?", fileid).Order("created_at desc").Preload("File").Preload("FileMetadata").First(&meta)
+	} else if len(filename) != 0 {
+		d.DB.Where("provided_name = ?", filename).Order("created_at desc").Preload("File").Preload("FileMetadata").First(&meta)
 	} else {
 		return meta, fmt.Errorf("file id/name is blank")
 	}
-	if res.RowsAffected == 0 {
+
+	if reflect.DeepEqual(meta, models.Metadata{}) {
 		er := "No File found with name: " + filename
 		return meta, fmt.Errorf(er)
 	}
+	d.Log.Info(fmt.Sprintf("Sending File of size: %v | Id: %v", meta.Size, meta.FileID))
 	return meta, nil
 }

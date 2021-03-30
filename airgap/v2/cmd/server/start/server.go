@@ -98,7 +98,7 @@ func (s *Server) GetFileMetadata(ctx context.Context, gfmr *fileserver.GetFileMe
 func (s *Server) DownloadFile(dfr *fileserver.DownloadFileRequest, stream fileserver.FileServer_DownloadFileServer) error {
 
 	//Fetch file info from DB
-	metadata, err := s.File.FetchFile(dfr.GetFileId())
+	metadata, err := s.File.DownloadFile(dfr.GetFileId())
 	if err != nil {
 		return err
 	}
@@ -124,18 +124,18 @@ func (s *Server) DownloadFile(dfr *fileserver.DownloadFileRequest, stream filese
 	res := &fileserver.DownloadFileResponse{
 		Data: &fileserver.DownloadFileResponse_Info{
 			Info: &v1.FileInfo{
-				FileId: &fid,
-				Size:   metadata.Size,
-
+				FileId:           &fid,
+				Size:             metadata.Size,
 				CreatedAt:        created_at,
 				DeletedTombstone: deleted_at,
+				UpdatedAt:        created_at,
 				Compression:      metadata.Compression,
 				CompressionType:  metadata.CompressionType,
 				Metadata:         fms,
 			},
 		},
 	}
-	s.Log.Info(fmt.Sprintf(" File Info Response: %v", res))
+	s.Log.Info(fmt.Sprintf(" File Info Response: %v ", res))
 	// Send File Information
 	err = stream.Send(res)
 	if err != nil {
@@ -149,31 +149,17 @@ func (s *Server) DownloadFile(dfr *fileserver.DownloadFileRequest, stream filese
 	var chunk []byte
 	chunksize := 1024
 
-	for len(buf) >= chunksize {
-
-		chunk, buf = buf[:chunksize], buf[chunksize:]
+	for len(buf) != 0 {
+		if len(buf) >= chunksize {
+			chunk, buf = buf[:chunksize], buf[chunksize:]
+		} else {
+			chunk, buf = buf[:], buf[len(buf):]
+		}
 
 		// File chunk response
 		res := &fileserver.DownloadFileResponse{
 			Data: &fileserver.DownloadFileResponse_ChunkData{
 				ChunkData: chunk,
-			},
-		}
-		// Send File chunks
-		err = stream.Send(res)
-		if err != nil {
-			return status.Errorf(
-				codes.Unknown,
-				fmt.Sprintf(" Error sending Response %v ", err),
-			)
-		}
-	}
-	// Send last chunk of file
-	if len(buf) > 0 {
-		// File chunk response
-		res := &fileserver.DownloadFileResponse{
-			Data: &fileserver.DownloadFileResponse_ChunkData{
-				ChunkData: buf,
 			},
 		}
 		// Send File chunks
