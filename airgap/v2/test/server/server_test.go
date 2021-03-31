@@ -16,6 +16,7 @@ package test
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -305,13 +306,6 @@ func TestInvalidDownload(t *testing.T) {
 	conn := createClient()
 	client := fileserver.NewFileServerClient(conn)
 
-	// temporary directory to store downloaded files
-	dir, err := os.MkdirTemp("", "files")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer os.RemoveAll(dir) // clean up
-
 	//Shutting down environment
 	defer func() {
 		sqlDB, err := db.DB.DB()
@@ -326,40 +320,61 @@ func TestInvalidDownload(t *testing.T) {
 	}()
 
 	// Download file client request
-	f_name := "file.tz"
+	// Download request with empty filename
+	t.Log("Attempting to download File by passing only whitespaces as name ")
 	d_req := &fileserver.DownloadFileRequest{
 		FileId: &v1.FileID{
 			Data: &v1.FileID_Name{
-				Name: f_name},
+				Name: ""}, // Empty file name
 		},
 	}
+	// Download Client
 	downloadClient, err := client.DownloadFile(context.Background(), d_req)
 	if err != nil {
 		log.Fatalf("failed to download: %v", err)
 	}
 
-	f, err := os.Create(dir + "/" + f_name)
 	if err != nil {
 		log.Fatalf("failed to create file:%v", err)
 	}
-	for {
-		file, err := downloadClient.Recv()
-		log.Println(file)
-		if err == io.EOF {
-			break
-		}
-		if err == nil {
-			t.Error("error: Cannot download file Non existing file")
-		} else {
-			t.Log("Attempt to download non existing file has been revoked successfully")
-			break
-		}
-		f.Write([]byte(file.GetChunkData()))
+
+	_, err = downloadClient.Recv()
+	if err == io.EOF {
 	}
-	defer f.Close()
+	if err != nil {
+		t.Logf("Attempt has been revoked successfully: %v", err)
+	} else {
+		t.Error("Error: Cannot download file without name/id")
+	}
+
+	// Download Non-existent file client request
+	t.Log("Attempting to download Non-existing File")
+	d_req = &fileserver.DownloadFileRequest{
+		FileId: &v1.FileID{
+			Data: &v1.FileID_Name{
+				Name: "file.zip"}, // Empty file name
+		},
+	}
+	// Download Client
+	downloadClient, err = client.DownloadFile(context.Background(), d_req)
+	if err != nil {
+		log.Fatalf("failed to download: %v", err)
+	}
+
+	if err != nil {
+		log.Fatalf("failed to create file:%v", err)
+	}
+
+	_, err = downloadClient.Recv()
+	if err == io.EOF {
+	}
+	if err != nil {
+		t.Logf("Attempt has been revoked successfully: %v", err)
+	} else {
+		t.Error("Error: Cannot download file without name/id")
+	}
 
 	t.Logf("recieved server response and closed stream")
-
 }
 
 //A positive test for Downloading File
@@ -368,13 +383,6 @@ func TestDownloadFile(t *testing.T) {
 	runSetup()
 	conn := createClient()
 	client := fileserver.NewFileServerClient(conn)
-
-	// temporary directory to store downloaded files
-	dir, err := os.MkdirTemp("", "files")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer os.RemoveAll(dir) // clean up
 
 	//Shutting down environment
 	defer func() {
@@ -388,6 +396,82 @@ func TestDownloadFile(t *testing.T) {
 
 		lis.Close() //Closing This shuts down server too.
 	}()
+
+	//Opening file
+	filename := "file.gz"
+	file, err := os.Open(filename)
+	if err != nil {
+		t.Fatalf("file couldn't be opened: %v", err)
+	}
+	defer func() {
+		if err := file.Close(); err != nil {
+			t.Fatalf("error: couldn't close file after read: %v", err)
+		}
+	}()
+
+	//client-stream to upload the file
+	uploadClient, err := client.UploadFile(context.Background())
+	if err != nil {
+		t.Fatalf("error: During call of client.UploadFile: %v", err)
+	}
+
+	//Getting file metadata
+	metadata, err := file.Stat()
+	if err != nil {
+		t.Fatalf("error: file Stats couldn't be obtained %v", err)
+	}
+
+	//Upload initial message & metadata
+	err = uploadClient.Send(&fileserver.UploadFileRequest{
+		Data: &fileserver.UploadFileRequest_Info{
+			Info: &v1.FileInfo{
+				FileId: &v1.FileID{
+					Data: &v1.FileID_Name{
+						Name: metadata.Name(),
+					},
+				},
+				Size: uint32(metadata.Size()),
+				Metadata: map[string]string{
+					"key1": "value1",
+				},
+			},
+		},
+	})
+
+	if err != nil && err != io.EOF {
+		t.Fatalf("error: during sending of metadata: %v", err)
+	}
+
+	t.Log("finished uploading metadata")
+
+	//Chunking
+	chunkSize := 32
+	buffReader := bufio.NewReader(file)
+	buffer := make([]byte, chunkSize)
+	for {
+		n, err := buffReader.Read(buffer)
+		if err != nil {
+			if err != io.EOF {
+				t.Fatalf("Error: During sending of chunked data: %v", err)
+			}
+			break
+		}
+		//Sending request
+		request := fileserver.UploadFileRequest{
+			Data: &fileserver.UploadFileRequest_ChunkData{
+				ChunkData: buffer[0:n],
+			},
+		}
+		uploadClient.Send(&request)
+	}
+
+	t.Log("finished uploading file contents")
+
+	//Closes stream
+	_, err = uploadClient.CloseAndRecv()
+	if err != nil {
+		t.Fatalf("error: during stream close and recieve: %v", err)
+	}
 
 	// Download file client request
 	f_name := "file.gz"
@@ -401,63 +485,24 @@ func TestDownloadFile(t *testing.T) {
 	if err != nil {
 		log.Fatalf("failed to download: %v", err)
 	}
-
-	f_path := dir + "/" + f_name
-	f, err := os.Create(f_path)
-	if err != nil {
-		log.Fatalf("failed to create file:%v", err)
-	}
-
+	var bs bytes.Buffer
 	for {
-		file, err := downloadClient.Recv()
+		res, err := downloadClient.Recv()
 		if err == io.EOF {
 			break
 		}
 		if err == nil {
 			t.Log("File Chunk Received Successfully")
 		} else {
-			t.Error("Attempt to download non existing file ")
+			t.Errorf("Error receiving response: %v ", err)
 			break
 		}
-		f.Write([]byte(file.GetChunkData()))
-	}
-	defer f.Close()
-
-	t.Logf("recieved server response and closed stream")
-
-	//Opening file
-	filename := "file.gz"
-	file, err := os.Open(filename)
-	if err != nil {
-		t.Fatalf("file couldn't be opened: %v", err)
-	}
-	downloaded_file, err := os.Open(f_path)
-	if err != nil {
-		t.Fatalf("file couldn't be opened: %v", err)
-	}
-	defer func() {
-		if err := downloaded_file.Close(); err != nil {
-			t.Fatalf("error: couldn't close file after read: %v", err)
-		}
-		if err := file.Close(); err != nil {
-			t.Fatalf("error: couldn't close file after read: %v", err)
-		}
-	}()
-
-	//Getting file metadata
-	metadata, err := file.Stat()
-	if err != nil {
-		t.Fatalf("error: file Stats couldn't be obtained %v", err)
-	}
-	d_metadata, err := downloaded_file.Stat()
-	if err != nil {
-		t.Fatalf("error: file Stats couldn't be obtained %v", err)
+		bs.Write(res.GetChunkData())
 	}
 
-	if uint32(d_metadata.Size()) != uint32(metadata.Size()) {
-		t.Error(fmt.Sprintf("downloaded and existing data size doesn't match: %v Bytes != %v Bytes", uint32(d_metadata.Size()), uint32(metadata.Size())))
+	if metadata.Size() == int64(bs.Len()) {
+		t.Log(fmt.Sprintf("Verified size of downloaded and existing files successfully:  %v Bytes == %v Bytes", uint32(metadata.Size()), uint32(metadata.Size())))
 	} else {
-		t.Log(fmt.Sprintf("verified size of downloaded and existing files successfully:  %v Bytes == %v Bytes", uint32(d_metadata.Size()), uint32(metadata.Size())))
+		t.Error(fmt.Sprint("Downloaded and existing file sizes doesn't match"))
 	}
-
 }

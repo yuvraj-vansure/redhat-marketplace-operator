@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package test
+package database
 
 import (
 	"os"
@@ -141,7 +141,8 @@ func TestSaveFileInputValidation(t *testing.T) {
 
 }
 
-func TestDownloadFileFn(t *testing.T) {
+// Positive test for Downloading File
+func TestDownloadFile(t *testing.T) {
 
 	var log logr.Logger
 	zapLog, err := zap.NewDevelopment()
@@ -207,6 +208,7 @@ func TestDownloadFileFn(t *testing.T) {
 		t.Logf("Downloaded file size: %v  and Uploaded file size: %v Matched.", metadata.Size, finfo.Size)
 	}
 
+	t.Logf("Attempting to download non existing file ")
 	// Non Existing File
 	fName = &v1.FileID{
 		Data: &v1.FileID_Name{
@@ -216,9 +218,12 @@ func TestDownloadFileFn(t *testing.T) {
 	_, dbErr = database.DownloadFile(fName)
 	if dbErr == nil {
 		t.Fatalf("Download Method send non existing file [Some other file must be fetched]")
+	} else {
+		t.Logf("Attempt Revoked: %v ", dbErr)
 	}
 }
 
+// Negative test for Downloading File
 func TestDownloadFileInputValidation(t *testing.T) {
 	var log logr.Logger
 	zapLog, err := zap.NewDevelopment()
@@ -243,6 +248,7 @@ func TestDownloadFileInputValidation(t *testing.T) {
 	}
 
 	// Empty name
+	t.Log("Attempting to download File by passing only whitespaces as name ")
 	fName := &v1.FileID{
 		Data: &v1.FileID_Name{
 			Name: "     ",
@@ -252,17 +258,22 @@ func TestDownloadFileInputValidation(t *testing.T) {
 	_, dbErr := database.DownloadFile(fName)
 	if dbErr == nil {
 		t.Fatalf("Download Method Allows name with only whitespaces.")
+	} else {
+		t.Logf("Attempt revoked : %v ", dbErr)
 	}
 
 	// Empty Id
+	t.Log("Attempting to download File by passing only whitespaces as id ")
 	fId := &v1.FileID{
-		Data: &v1.FileID_Name{
-			Name: "     ",
+		Data: &v1.FileID_Id{
+			Id: "     ",
 		},
 	}
 
 	_, dbErr = database.DownloadFile(fId)
 	if dbErr == nil {
 		t.Fatalf("Download Method Allows Id with only whitespaces.")
+	} else {
+		t.Logf("Attempt revoked : %v ", dbErr)
 	}
 }
