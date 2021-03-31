@@ -305,6 +305,13 @@ func TestInvalidDownload(t *testing.T) {
 	conn := createClient()
 	client := fileserver.NewFileServerClient(conn)
 
+	// temporary directory to store downloaded files
+	dir, err := os.MkdirTemp("", "files")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer os.RemoveAll(dir) // clean up
+
 	//Shutting down environment
 	defer func() {
 		sqlDB, err := db.DB.DB()
@@ -331,7 +338,7 @@ func TestInvalidDownload(t *testing.T) {
 		log.Fatalf("failed to download: %v", err)
 	}
 
-	f, err := os.Create("./files/file.g")
+	f, err := os.Create(dir + "/" + f_name)
 	if err != nil {
 		log.Fatalf("failed to create file:%v", err)
 	}
@@ -362,6 +369,13 @@ func TestDownloadFile(t *testing.T) {
 	conn := createClient()
 	client := fileserver.NewFileServerClient(conn)
 
+	// temporary directory to store downloaded files
+	dir, err := os.MkdirTemp("", "files")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer os.RemoveAll(dir) // clean up
+
 	//Shutting down environment
 	defer func() {
 		sqlDB, err := db.DB.DB()
@@ -388,19 +402,19 @@ func TestDownloadFile(t *testing.T) {
 		log.Fatalf("failed to download: %v", err)
 	}
 
-	f, err := os.Create("./files/file.gz")
+	f_path := dir + "/" + f_name
+	f, err := os.Create(f_path)
 	if err != nil {
 		log.Fatalf("failed to create file:%v", err)
 	}
 
 	for {
 		file, err := downloadClient.Recv()
-		log.Println(file)
 		if err == io.EOF {
 			break
 		}
 		if err == nil {
-			t.Log("File downloaded successfully")
+			t.Log("File Chunk Received Successfully")
 		} else {
 			t.Error("Attempt to download non existing file ")
 			break
@@ -417,7 +431,7 @@ func TestDownloadFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("file couldn't be opened: %v", err)
 	}
-	downloaded_file, err := os.Open("./files/file.gz")
+	downloaded_file, err := os.Open(f_path)
 	if err != nil {
 		t.Fatalf("file couldn't be opened: %v", err)
 	}

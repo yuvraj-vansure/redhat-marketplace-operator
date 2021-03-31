@@ -140,3 +140,130 @@ func TestSaveFileInputValidation(t *testing.T) {
 	}
 
 }
+
+func TestDownloadFileFn(t *testing.T) {
+
+	var log logr.Logger
+	zapLog, err := zap.NewDevelopment()
+	if err != nil {
+		t.Fatalf("Failed to initialize zapr, due to error: %v", err)
+	}
+	log = zapr.NewLogger(zapLog)
+
+	defer os.Remove("test.db")
+
+	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("Couldn't create sqlite connection")
+	}
+
+	//Perform migrations
+	db.AutoMigrate(&models.FileMetadata{}, &models.File{}, &models.Metadata{})
+
+	database := &database.Database{
+		DB:  db,
+		Log: log,
+	}
+	bs := make([]byte, 1024)
+	finfo := &v1.FileInfo{
+		FileId: &v1.FileID{
+			Data: &v1.FileID_Name{
+				Name: "test-file",
+			},
+		},
+		Size:            1024,
+		Compression:     true,
+		CompressionType: "gzip",
+		Metadata: map[string]string{
+			"Key1": "Value1",
+			"Key2": "Value2",
+		},
+	}
+	dbErr := database.SaveFile(finfo, bs)
+	if dbErr != nil {
+		t.Fatalf("Couldn't save file due to:%v", dbErr)
+	}
+
+	// Fetch `test-file`
+	fName := &v1.FileID{
+		Data: &v1.FileID_Name{
+			Name: "test-file",
+		},
+	}
+
+	metadata, err := database.DownloadFile(fName)
+	if err != nil {
+		t.Fatalf("Error occured while fetching fiie from DB: %v ", dbErr)
+	}
+
+	if metadata.ProvidedName != finfo.FileId.GetName() {
+		t.Fatalf("Downloaded file name: %v  and Uploaded file Name: %v dosen't match.", metadata.ProvidedName, finfo.FileId.GetName())
+	} else {
+		t.Logf("Downloaded file name: %v  and Uploaded file Name: %v Matched.", metadata.ProvidedName, finfo.FileId.GetName())
+	}
+	if metadata.Size != finfo.Size {
+		t.Fatalf("Downloaded file size: %v  and Uploaded file size: %v dosen't match.", metadata.Size, finfo.Size)
+	} else {
+		t.Logf("Downloaded file size: %v  and Uploaded file size: %v Matched.", metadata.Size, finfo.Size)
+	}
+
+	// Non Existing File
+	t.Log("\n Downloading non existing file")
+	fName = &v1.FileID{
+		Data: &v1.FileID_Name{
+			Name: "file.tz",
+		},
+	}
+	_, dbErr = database.DownloadFile(fName)
+	if dbErr == nil {
+		t.Fatalf("Download Method send non existing file [Some other file must be fetched]")
+	}
+}
+
+func TestDownloadFileInputValidation(t *testing.T) {
+	var log logr.Logger
+	zapLog, err := zap.NewDevelopment()
+	if err != nil {
+		t.Fatalf("Failed to initialize zapr, due to error: %v", err)
+	}
+	log = zapr.NewLogger(zapLog)
+
+	defer os.Remove("test.db")
+
+	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("Couldn't create sqlite connection")
+	}
+
+	//Perform migrations
+	db.AutoMigrate(&models.FileMetadata{}, &models.File{}, &models.Metadata{})
+
+	database := &database.Database{
+		DB:  db,
+		Log: log,
+	}
+
+	// Empty name
+	fName := &v1.FileID{
+		Data: &v1.FileID_Name{
+			Name: "     ",
+		},
+	}
+
+	_, dbErr := database.DownloadFile(fName)
+	if dbErr == nil {
+		t.Fatalf("Download Method Allows name with only whitespaces.")
+	}
+
+	// Empty Id
+	fId := &v1.FileID{
+		Data: &v1.FileID_Name{
+			Name: "     ",
+		},
+	}
+
+	_, dbErr = database.DownloadFile(fId)
+	if dbErr == nil {
+		t.Fatalf("Download Method Allows Id with only whitespaces.")
+	}
+}
