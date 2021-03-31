@@ -208,7 +208,6 @@ func TestDownloadFileFn(t *testing.T) {
 	}
 
 	// Non Existing File
-	t.Log("\n Downloading non existing file")
 	fName = &v1.FileID{
 		Data: &v1.FileID_Name{
 			Name: "file.tz",
