@@ -23,6 +23,7 @@ import (
 	v1 "github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/apis/model/v1"
 	"github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/pkg/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type File interface {
@@ -86,9 +87,9 @@ func (d *Database) DownloadFile(finfo *v1.FileID) (models.Metadata, error) {
 	filename := strings.TrimSpace(finfo.GetName())
 
 	if len(fileid) != 0 {
-		d.DB.Where("provided_id = ?", fileid).Order("created_at desc").Preload("File").Preload("FileMetadata").First(&meta)
+		d.DB.Where("provided_id = ?", fileid).Order("created_at desc").Preload(clause.Associations).First(&meta)
 	} else if len(filename) != 0 {
-		d.DB.Where("provided_name = ?", filename).Order("created_at desc").Preload("File").Preload("FileMetadata").First(&meta)
+		d.DB.Where("provided_name = ?", filename).Order("created_at desc").Preload(clause.Associations).First(&meta)
 	} else {
 		return meta, fmt.Errorf("file id/name is blank")
 	}
