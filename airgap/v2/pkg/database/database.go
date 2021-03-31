@@ -28,7 +28,7 @@ import (
 
 type File interface {
 	SaveFile(finfo *v1.FileInfo, bs []byte) error
-	DownloadFile(finfo *v1.FileID) (models.Metadata, error)
+	DownloadFile(finfo *v1.FileID) (*models.Metadata, error)
 }
 
 type Database struct {
@@ -79,7 +79,7 @@ func (d *Database) SaveFile(finfo *v1.FileInfo, bs []byte) error {
 	return nil
 }
 
-func (d *Database) DownloadFile(finfo *v1.FileID) (models.Metadata, error) {
+func (d *Database) DownloadFile(finfo *v1.FileID) (*models.Metadata, error) {
 
 	var meta models.Metadata
 
@@ -91,13 +91,13 @@ func (d *Database) DownloadFile(finfo *v1.FileID) (models.Metadata, error) {
 	} else if len(filename) != 0 {
 		d.DB.Where("provided_name = ?", filename).Order("created_at desc").Preload(clause.Associations).First(&meta)
 	} else {
-		return meta, fmt.Errorf("file id/name is blank")
+		return nil, fmt.Errorf("file id/name is blank")
 	}
 
 	if reflect.DeepEqual(meta, models.Metadata{}) {
 		er := "No File found with name: " + filename
-		return meta, fmt.Errorf(er)
+		return nil, fmt.Errorf(er)
 	}
 	d.Log.Info(fmt.Sprintf("Sending File of size: %v | Id: %v", meta.Size, meta.FileID))
-	return meta, nil
+	return &meta, nil
 }
