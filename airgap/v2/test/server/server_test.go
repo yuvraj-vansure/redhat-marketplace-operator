@@ -23,6 +23,7 @@ import (
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/apis/fileretreiver"
 	"github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/apis/filesender"
@@ -345,5 +346,195 @@ func TestFileRetreiverServer_DownloadFile(t *testing.T) {
 				t.Errorf("sent:%v and recieved:%v size doesn't match for test: %v", bs.Len(), int(tt.size), tt.name)
 			}
 		})
+	}
+}
+
+func TestFileRetreiverServer_ListFileMetadata(t *testing.T) {
+	//Initialize server
+	runSetup()
+	//Initialize client
+	conn := createClient()
+	//Shutdown resources
+	defer shutdown(conn)
+
+	populateDataset()
+	listFileMetadataClient := fileretreiver.NewFileRetreiverClient(conn)
+	//TODO: TEST CASES FOR SERVER
+	tests := []struct {
+		name    string
+		lfr     *fileretreiver.ListFileMetadataRequest
+		res_len int
+		errCode codes.Code
+	}{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stream, err := listFileMetadataClient.ListFileMetadata(context.Background(), tt.lfr)
+			var data []*v1.FileInfo
+			if err != nil {
+				t.Errorf("error while invoking grpc method download file for test:%v with err: %v", tt.name, err)
+			}
+			for {
+				response, err := stream.Recv()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					if er, ok := status.FromError(err); ok {
+						if er.Code() != tt.errCode {
+							t.Errorf("mismatched error codes: expected %v, received: %v for test: %v", tt.errCode, er.Code(), tt.name)
+						}
+					}
+					break
+				}
+				data = append(data, response.GetResults())
+			}
+
+		})
+	}
+}
+
+// Populate Database for testing
+func populateDataset() {
+	var t *testing.T
+	files := []v1.FileInfo{
+		{
+			FileId: &v1.FileID{
+				Data: &v1.FileID_Name{
+					Name: "reports.zip",
+				},
+			},
+			Size:            1000,
+			Compression:     true,
+			CompressionType: "gzip",
+			Metadata: map[string]string{
+				"version": "1",
+				"type":    "report",
+			},
+		},
+		{
+			FileId: &v1.FileID{
+				Data: &v1.FileID_Name{
+					Name: "reports.zip",
+				},
+			},
+			Size:            2000,
+			Compression:     true,
+			CompressionType: "gzip",
+			Metadata: map[string]string{
+				"version": "2",
+				"type":    "report",
+			},
+		},
+		{
+			FileId: &v1.FileID{
+				Data: &v1.FileID_Name{
+					Name: "marketplace_report.zip",
+				},
+			},
+			Size:            300,
+			Compression:     true,
+			CompressionType: "gzip",
+			Metadata: map[string]string{
+				"version": "1",
+				"type":    "marketplace_report",
+			},
+		},
+		{
+			FileId: &v1.FileID{
+				Data: &v1.FileID_Name{
+					Name: "marketplace_report.zip",
+				},
+			},
+			Size:            200,
+			Compression:     true,
+			CompressionType: "gzip",
+			Metadata: map[string]string{
+				"version": "2",
+				"type":    "marketplace_report",
+			},
+		},
+		{
+			FileId: &v1.FileID{
+				Data: &v1.FileID_Name{
+					Name: "airgap-deploy.zip",
+				},
+			},
+			Size:            1000,
+			Compression:     true,
+			CompressionType: "gzip",
+			Metadata: map[string]string{
+				"version": "1",
+				"name":    "airgap",
+				"type":    "deployment-package",
+			},
+		},
+		{
+			FileId: &v1.FileID{
+				Data: &v1.FileID_Name{
+					Name: "airgap-deploy.zip",
+				},
+			},
+			Size:            1000,
+			Compression:     true,
+			CompressionType: "gzip",
+			Metadata: map[string]string{
+				"version":     "latest",
+				"name":        "airgap",
+				"type":        "deployment-package",
+				"description": "airgap deployment code ",
+			},
+		},
+		{
+			FileId: &v1.FileID{
+				Data: &v1.FileID_Name{
+					Name: "Kube.sh",
+				},
+			},
+			Size:            200,
+			Compression:     false,
+			CompressionType: "",
+			Metadata: map[string]string{
+				"version":     "latest",
+				"description": "kube cluster executable file",
+				"type":        "kube-executable",
+			},
+		},
+		{
+			FileId: &v1.FileID{
+				Data: &v1.FileID_Name{
+					Name: "dosfstools",
+				},
+			},
+			Size:            2000,
+			Compression:     true,
+			CompressionType: "gzip",
+			Metadata: map[string]string{
+				"version":     "latest",
+				"description": "DOS filesystem utilities",
+			},
+		},
+		{
+			FileId: &v1.FileID{
+				Data: &v1.FileID_Name{
+					Name: "dosbox",
+				},
+			},
+			Size:            1500,
+			Compression:     true,
+			CompressionType: "gzip",
+			Metadata: map[string]string{
+				"version":     "4.3",
+				"description": "Emulator with builtin DOS for running DOS Games",
+			},
+		},
+	}
+
+	for _, finfo := range files {
+		bs := make([]byte, finfo.Size)
+		dbErr := db.SaveFile(&finfo, bs)
+		if dbErr != nil {
+			t.Fatalf("Couldn't save file due to:%v", dbErr)
+		}
+		time.Sleep(1 * time.Second)
 	}
 }
