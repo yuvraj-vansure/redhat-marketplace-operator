@@ -149,7 +149,7 @@ func (frs *FileRetreiverServer) ListFileMetadata(lis *fileretreiver.ListFileMeta
 		default:
 			return status.Errorf(
 				codes.InvalidArgument,
-				fmt.Sprintf("Invalid operator used for filter operation."),
+				fmt.Sprintf("Invalid operator used for filter operation: %v ", rawOperator),
 			)
 		}
 

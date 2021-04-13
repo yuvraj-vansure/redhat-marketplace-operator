@@ -56,15 +56,15 @@ var ListCmd = &cobra.Command{
 	[provided_id] refers to the file identifier
 	[provided_name] refers to the name of the file
 	[size] refer to the size of file
-	[created_at] refers to file creation date (expected format yyyy-mm-dd | yyyy/mm/dd)
-	[deleted_at] refer to the file deletion date  (expected format yyyy-mm-dd | yyyy/mm/dd)
+	[created_at] refers to file creation date (expected format yyyy-mm-dd)
+	[deleted_at] refer to the file deletion date  (expected format yyyy-mm-dd)
 	-----------------------------------------------------------------------
 	Pre-defined sort keys: 
 	[provided_id] refers to the file identifier
 	[provided_name] refers to the name of the file
 	[size] refer to the size of file
-	[created_at] refers to file creation date (expected format dd-mm-yy)
-	[deleted_at] refer to the file deletion date  (expected format dd-mm-yy)
+	[created_at] refers to file creation date (expected format yyyy-mm-dd)
+	[deleted_at] refer to the file deletion date  (expected format yyyy-mm-dd)
 	`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Initialize client
@@ -79,8 +79,8 @@ var ListCmd = &cobra.Command{
 
 func init() {
 	initLog()
-	ListCmd.Flags().StringSliceVarP(&lc.filter, "filter", "f", []string{}, "List file usign date")
-	ListCmd.Flags().StringSliceVarP(&lc.sort, "sort", "s", []string{}, "List file usign date")
+	ListCmd.Flags().StringSliceVarP(&lc.filter, "filter", "f", []string{}, "List file using date")
+	ListCmd.Flags().StringSliceVarP(&lc.sort, "sort", "s", []string{}, "List file using date")
 }
 
 func initLog() {
@@ -159,7 +159,7 @@ func (lc *Listconfig) listFileMetadata() error {
 		return fmt.Errorf("failed to Retrive list due to: %v", err)
 	}
 
-	fmt.Println("-----------------OUTPUT-----------------")
+	log.Info("-----------------OUTPUT-----------------")
 	for {
 		response, err := resultStream.Recv()
 		if err == io.EOF {
@@ -344,7 +344,5 @@ func parseDateToEpoch(date string) (string, error) {
 	}
 
 	time_ := time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
-	fmt.Printf("Entered Time: %v \n", time_)
-	fmt.Printf("Epoch Time: %v \n", time_.Unix())
 	return strconv.FormatInt(time_.Unix(), 10), nil
 }

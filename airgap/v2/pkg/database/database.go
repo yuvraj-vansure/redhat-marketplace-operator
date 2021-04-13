@@ -49,6 +49,11 @@ type Condition struct {
 	Value    string
 }
 
+type MetaDataQuery struct {
+	MetaString string
+	MetaValue  []interface{}
+}
+
 // SaveFile allows us to save a file along with it's metadata to the database
 func (d *Database) SaveFile(finfo *v1.FileInfo, bs []byte) error {
 	// Validating input data
@@ -119,11 +124,7 @@ func (d *Database) DownloadFile(finfo *v1.FileID) (*models.Metadata, error) {
 
 // ListFileMetadata allow us to fetch list of files and its metadata from database
 func (d *Database) ListFileMetadata(conditionList []*Condition, sortOrderList []*SortOrder) ([]models.Metadata, error) {
-	type MetaDataQuery struct {
-		MetaString string
-		MetaValue  []interface{}
-	}
-	//Converts the keys from Goloang notation to the Database notation i.e., HelloWorldGlobe -> hello_world_globe
+	//Converts the keys from golang notation to the database notation i.e., HelloWorldGlobe -> hello_world_globe
 	cleanKey := func(s string) string {
 		output := []byte{}
 		for id, c := range s {
@@ -147,7 +148,7 @@ func (d *Database) ListFileMetadata(conditionList []*Condition, sortOrderList []
 	//Add database models here
 	addModelColumn(models.Metadata{})
 
-	//Create sorteOrder list
+	//Create sortOrder list
 	sortOrderStringList := []string{}
 	for _, sortOrder := range sortOrderList {
 		sortOrderStringList = append(sortOrderStringList, fmt.Sprintf("%v %v", sortOrder.Key, sortOrder.Order))
@@ -159,7 +160,6 @@ func (d *Database) ListFileMetadata(conditionList []*Condition, sortOrderList []
 	metaList := []MetaDataQuery{}
 	for _, condition := range conditionList {
 		if modelColumnSet[condition.Key] { // if the key is a field in a model
-
 			conditionStringList = append(conditionStringList, fmt.Sprintf("%v %v ?", condition.Key, condition.Operator))
 			if condition.Operator == "LIKE" {
 				conditionValueList = append(conditionValueList, fmt.Sprintf("%%%v%%", condition.Value))
@@ -167,7 +167,6 @@ func (d *Database) ListFileMetadata(conditionList []*Condition, sortOrderList []
 				conditionValueList = append(conditionValueList, condition.Value)
 			}
 		} else { //if it is not a field in a model, then it must be present as key in fileMetadata
-
 			var metaValue []interface{}
 			metaString := fmt.Sprintf("key = ? AND value %v ?", condition.Operator)
 
@@ -176,7 +175,7 @@ func (d *Database) ListFileMetadata(conditionList []*Condition, sortOrderList []
 			} else if condition.Operator == "=" {
 				metaValue = append(metaValue, condition.Key, condition.Value)
 			} else {
-				return nil, fmt.Errorf("Invalid Operator provided")
+				return nil, fmt.Errorf("Invalid Operator provided: %v ", condition.Operator)
 			}
 			metaList = append(metaList, MetaDataQuery{MetaString: metaString, MetaValue: metaValue})
 		}
@@ -203,7 +202,8 @@ func (d *Database) ListFileMetadata(conditionList []*Condition, sortOrderList []
 	queryChain.Distinct().
 		Group("provided_name, provided_id").
 		Having("created_at= max(created_at)").
-		Preload("FileMetadata").Find(&metadataList)
+		Preload("FileMetadata").
+		Find(&metadataList)
 
 	return metadataList, nil
 }
