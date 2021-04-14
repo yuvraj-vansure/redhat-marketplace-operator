@@ -217,6 +217,34 @@ func populateDataset() {
 				"type": "kube-executable",
 			},
 		},
+		{
+			FileId: &v1.FileID{
+				Data: &v1.FileID_Name{
+					Name: "dosfstools",
+				},
+			},
+			Size:            2000,
+			Compression:     true,
+			CompressionType: "gzip",
+			Metadata: map[string]string{
+				"version":     "latest",
+				"description": "DOS filesystem utilities",
+			},
+		},
+		{
+			FileId: &v1.FileID{
+				Data: &v1.FileID_Name{
+					Name: "dosbox",
+				},
+			},
+			Size:            1500,
+			Compression:     true,
+			CompressionType: "gzip",
+			Metadata: map[string]string{
+				"version":     "4.3",
+				"description": "Emulator with builtin DOS for running DOS Games",
+			},
+		},
 	}
 
 	for _, finfo := range files {
@@ -247,7 +275,7 @@ func TestList(t *testing.T) {
 		errMsg string
 	}{
 		{
-			name: "Fetch one of the files just based on metadata",
+			name: "fetch one of the files just based on metadata",
 			lc: &Listconfig{
 				filter: []string{"size GREATER_THAN 100", "type CONTAINS report"},
 				sort:   []string{},
@@ -257,7 +285,7 @@ func TestList(t *testing.T) {
 			errMsg: "",
 		},
 		{
-			name: "All files are returned when no conditions are specified",
+			name: "all files are returned when no conditions are specified",
 			lc: &Listconfig{
 				filter: []string{},
 				sort:   []string{},
@@ -267,10 +295,20 @@ func TestList(t *testing.T) {
 			errMsg: "",
 		},
 		{
-			name: "Fetch latest file based on name",
+			name: "fetch latest file based on name",
 			lc: &Listconfig{
 				filter: []string{"provided_name EQUAL reports.zip", "size GREATER_THAN 100", "version EQUAL 1"},
 				sort:   []string{"provided_name ASC"},
+				conn:   conn,
+				client: listFilMetaDataCLient,
+			},
+			errMsg: "",
+		},
+		{
+			name: "fetch file for quoted metadata key value",
+			lc: &Listconfig{
+				filter: []string{"'description    ' CONTAINS 'with builtin'"},
+				sort:   []string{},
 				conn:   conn,
 				client: listFilMetaDataCLient,
 			},
@@ -314,7 +352,7 @@ func TestList(t *testing.T) {
 				conn:   conn,
 				client: listFilMetaDataCLient,
 			},
-			errMsg: "'asd' : Invalid number of arguments provided for sort operation, Required 2 | Provided 1",
+			errMsg: "Invalid number of arguments provided for sort operation, Required 2 | Provided 1",
 		},
 		{
 			name: "invalid sort operation",
@@ -325,6 +363,46 @@ func TestList(t *testing.T) {
 				client: listFilMetaDataCLient,
 			},
 			errMsg: "Invalid Sort Operation Used",
+		},
+		{
+			name: "invalid filter operation using empty key/value",
+			lc: &Listconfig{
+				filter: []string{"'    ' EQUAL '   ' "},
+				sort:   []string{},
+				conn:   conn,
+				client: listFilMetaDataCLient,
+			},
+			errMsg: "Invalid number of arguments provided for filter operation, Required 3 | Provided 1",
+		},
+		{
+			name: "invalid filter operation using empty filter arguments list",
+			lc: &Listconfig{
+				filter: []string{" "},
+				sort:   []string{},
+				conn:   conn,
+				client: listFilMetaDataCLient,
+			},
+			errMsg: "Invalid number of arguments provided for filter operation, Required 3 | Provided 0",
+		},
+		{
+			name: "invalid sort operation using empty sort key/operation",
+			lc: &Listconfig{
+				filter: []string{},
+				sort:   []string{" ' ' ASC"},
+				conn:   conn,
+				client: listFilMetaDataCLient,
+			},
+			errMsg: "Invalid number of arguments provided for sort operation, Required 2 | Provided 1",
+		},
+		{
+			name: "invalid sort operation using empty sort arguments list",
+			lc: &Listconfig{
+				filter: []string{},
+				sort:   []string{""},
+				conn:   conn,
+				client: listFilMetaDataCLient,
+			},
+			errMsg: "Invalid number of arguments provided for sort operation, Required 2 | Provided 0",
 		},
 	}
 

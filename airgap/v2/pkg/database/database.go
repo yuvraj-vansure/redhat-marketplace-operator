@@ -163,8 +163,10 @@ func (d *Database) ListFileMetadata(conditionList []*Condition, sortOrderList []
 			conditionStringList = append(conditionStringList, fmt.Sprintf("%v %v ?", condition.Key, condition.Operator))
 			if condition.Operator == "LIKE" {
 				conditionValueList = append(conditionValueList, fmt.Sprintf("%%%v%%", condition.Value))
-			} else {
+			} else if condition.Operator == "=" || condition.Operator == "<" || condition.Operator == ">" {
 				conditionValueList = append(conditionValueList, condition.Value)
+			} else {
+				return nil, fmt.Errorf("Invalid Operator provided: %v ", condition.Operator)
 			}
 		} else { //if it is not a field in a model, then it must be present as key in fileMetadata
 			var metaValue []interface{}

@@ -55,16 +55,16 @@ var ListCmd = &cobra.Command{
 	Pre-defined search keys: 
 	[provided_id] refers to the file identifier
 	[provided_name] refers to the name of the file
-	[size] refer to the size of file
+	[size] refers to the size of file
 	[created_at] refers to file creation date (expected format yyyy-mm-dd)
-	[deleted_at] refer to the file deletion date  (expected format yyyy-mm-dd)
+	[deleted_at] refers to the file deletion date  (expected format yyyy-mm-dd)
 	-----------------------------------------------------------------------
 	Pre-defined sort keys: 
 	[provided_id] refers to the file identifier
 	[provided_name] refers to the name of the file
-	[size] refer to the size of file
+	[size] refers to the size of file
 	[created_at] refers to file creation date (expected format yyyy-mm-dd)
-	[deleted_at] refer to the file deletion date  (expected format yyyy-mm-dd)
+	[deleted_at] refers to the file deletion date  (expected format yyyy-mm-dd)
 	`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Initialize client
@@ -159,7 +159,6 @@ func (lc *Listconfig) listFileMetadata() error {
 		return fmt.Errorf("failed to Retrive list due to: %v", err)
 	}
 
-	log.Info("-----------------OUTPUT-----------------")
 	for {
 		response, err := resultStream.Recv()
 		if err == io.EOF {
@@ -170,7 +169,7 @@ func (lc *Listconfig) listFileMetadata() error {
 		}
 
 		data := response.GetResults()
-		fmt.Println("Data: ", data)
+		log.Info(fmt.Sprintln("Data: ", data))
 	}
 
 	return nil
@@ -191,13 +190,8 @@ func parseFilter(filter []string) ([]*fileretreiver.ListFileMetadataRequest_List
 	var list_filter []*fileretreiver.ListFileMetadataRequest_ListFileFilter
 	for _, filter_string := range filter {
 
-		args := strings.Split(filter_string, " ")
-		var filter_args []string
-		for _, arg := range args {
-			if len(strings.TrimSpace(arg)) != 0 {
-				filter_args = append(filter_args, arg)
-			}
-		}
+		filter_args := parseArgs(filter_string)
+
 		if len(filter_args) != 3 {
 			return nil,
 				fmt.Errorf("'%v' : Invalid number of arguments provided for filter operation, Required 3 | Provided %v ",
@@ -243,7 +237,7 @@ func parseFilterOperator(op string, isColumn bool) (*fileretreiver.ListFileMetad
 		case "CONTAINS":
 			operator = fileretreiver.ListFileMetadataRequest_ListFileFilter_CONTAINS
 		default:
-			return nil, fmt.Errorf("Invalid Filter Operation Used")
+			return nil, fmt.Errorf("Invalid Filter Operation Used: %v ", op)
 		}
 	} else {
 		switch op {
@@ -252,7 +246,7 @@ func parseFilterOperator(op string, isColumn bool) (*fileretreiver.ListFileMetad
 		case "CONTAINS":
 			operator = fileretreiver.ListFileMetadataRequest_ListFileFilter_CONTAINS
 		default:
-			return nil, fmt.Errorf("Invalid Filter Operation Used")
+			return nil, fmt.Errorf("Invalid Filter Operation Used: %v ", op)
 		}
 	}
 
@@ -272,18 +266,14 @@ func parseSort(sort_list []string) ([]*fileretreiver.ListFileMetadataRequest_Lis
 	var list_sort []*fileretreiver.ListFileMetadataRequest_ListFileSort
 
 	for _, sort_string := range sort_list {
-		args := strings.Split(sort_string, " ")
-		var sort_args []string
-		for _, arg := range args {
-			if len(strings.TrimSpace(arg)) != 0 {
-				sort_args = append(sort_args, arg)
-			}
-		}
+
+		sort_args := parseArgs(sort_string)
+
 		if len(sort_args) != 2 {
 			return nil, fmt.Errorf("'%v' : Invalid number of arguments provided for sort operation, Required 2 | Provided %v ", sort_string, len(sort_args))
 		}
 		if !modelColumnSet[sort_args[0]] {
-			return nil, fmt.Errorf("Invalid Operand passed for sort operation.")
+			return nil, fmt.Errorf("Invalid Operand passed for sort operation: %v ", sort_args[0])
 		}
 		operator, err := parseSortOperator(sort_args[1])
 		if err != nil {
@@ -308,7 +298,7 @@ func parseSortOperator(op string) (*fileretreiver.ListFileMetadataRequest_ListFi
 	case "DESC":
 		operator = fileretreiver.ListFileMetadataRequest_ListFileSort_DESC
 	default:
-		return nil, fmt.Errorf("Invalid Sort Operation Used")
+		return nil, fmt.Errorf("Invalid Sort Operation Used: %v", op)
 	}
 
 	return &operator, nil
@@ -345,4 +335,47 @@ func parseDateToEpoch(date string) (string, error) {
 
 	time_ := time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
 	return strconv.FormatInt(time_.Unix(), 10), nil
+}
+
+func parseArgs(arg_string string) []string {
+	var args []string
+	var bstr []byte
+	isQuoted := false
+	for i, c := range arg_string {
+		if string(c) == "'" {
+			isQuoted = !isQuoted
+			st := strings.TrimSpace(string(bstr))
+			if len(st) != 0 {
+				args = append(args, st)
+			}
+			bstr = []byte{}
+			continue
+		}
+		if isQuoted {
+			bstr = append(bstr, byte(c))
+			if i == (len(arg_string) - 1) {
+				st := strings.TrimSpace(string(bstr))
+				if len(st) != 0 {
+					args = append(args, st)
+				}
+			}
+		} else {
+			if string(c) == " " {
+				st := strings.TrimSpace(string(bstr))
+				if len(st) != 0 {
+					args = append(args, st)
+				}
+				bstr = []byte{}
+				continue
+			}
+			bstr = append(bstr, byte(c))
+			if i == (len(arg_string) - 1) {
+				st := strings.TrimSpace(string(bstr))
+				if len(st) != 0 {
+					args = append(args, st)
+				}
+			}
+		}
+	}
+	return args
 }

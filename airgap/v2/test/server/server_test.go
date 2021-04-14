@@ -359,13 +359,90 @@ func TestFileRetreiverServer_ListFileMetadata(t *testing.T) {
 
 	populateDataset()
 	listFileMetadataClient := fileretreiver.NewFileRetreiverClient(conn)
-	//TODO: TEST CASES FOR SERVER
+
 	tests := []struct {
 		name    string
 		lfr     *fileretreiver.ListFileMetadataRequest
 		res_len int
 		errCode codes.Code
-	}{}
+	}{
+		{
+			name: "fetch list of all file by passing empty filter array",
+			lfr: &fileretreiver.ListFileMetadataRequest{
+				FilterBy: []*fileretreiver.ListFileMetadataRequest_ListFileFilter{},
+				SortBy:   []*fileretreiver.ListFileMetadataRequest_ListFileSort{},
+			},
+			res_len: 6,
+			errCode: codes.OK,
+		},
+		{
+			name: "fetch file list",
+			lfr: &fileretreiver.ListFileMetadataRequest{
+				FilterBy: []*fileretreiver.ListFileMetadataRequest_ListFileFilter{
+					{
+						Key:      "description",
+						Operator: fileretreiver.ListFileMetadataRequest_ListFileFilter_CONTAINS,
+						Value:    "filesystem utilities",
+					},
+				},
+				SortBy: []*fileretreiver.ListFileMetadataRequest_ListFileSort{},
+			},
+			res_len: 1,
+			errCode: codes.OK,
+		},
+		{
+			name: "empty values in filter operation",
+			lfr: &fileretreiver.ListFileMetadataRequest{
+				FilterBy: []*fileretreiver.ListFileMetadataRequest_ListFileFilter{
+					{},
+				},
+				SortBy: []*fileretreiver.ListFileMetadataRequest_ListFileSort{},
+			},
+			res_len: 0,
+			errCode: codes.InvalidArgument,
+		},
+		{
+			name: "empty values in sort operation",
+			lfr: &fileretreiver.ListFileMetadataRequest{
+				FilterBy: []*fileretreiver.ListFileMetadataRequest_ListFileFilter{},
+				SortBy: []*fileretreiver.ListFileMetadataRequest_ListFileSort{
+					{},
+				},
+			},
+			res_len: 0,
+			errCode: codes.InvalidArgument,
+		},
+		{
+			name: "empty key/value for filter operation",
+			lfr: &fileretreiver.ListFileMetadataRequest{
+				FilterBy: []*fileretreiver.ListFileMetadataRequest_ListFileFilter{
+					{
+						Key:      "     ",
+						Operator: fileretreiver.ListFileMetadataRequest_ListFileFilter_CONTAINS,
+						Value:    "",
+					},
+				},
+				SortBy: []*fileretreiver.ListFileMetadataRequest_ListFileSort{},
+			},
+			res_len: 0,
+			errCode: codes.InvalidArgument,
+		},
+		{
+			name: "empty sort key for sort operation",
+			lfr: &fileretreiver.ListFileMetadataRequest{
+				FilterBy: []*fileretreiver.ListFileMetadataRequest_ListFileFilter{},
+				SortBy: []*fileretreiver.ListFileMetadataRequest_ListFileSort{
+					{
+						Key:       "  ",
+						SortOrder: fileretreiver.ListFileMetadataRequest_ListFileSort_DESC,
+					},
+				},
+			},
+			res_len: 0,
+			errCode: codes.InvalidArgument,
+		},
+	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stream, err := listFileMetadataClient.ListFileMetadata(context.Background(), tt.lfr)
@@ -381,14 +458,20 @@ func TestFileRetreiverServer_ListFileMetadata(t *testing.T) {
 				if err != nil {
 					if er, ok := status.FromError(err); ok {
 						if er.Code() != tt.errCode {
-							t.Errorf("mismatched error codes: expected %v, received: %v for test: %v", tt.errCode, er.Code(), tt.name)
+							t.Errorf("mismatched error codes: expected %v, received: %v, details: %v | for test: %v",
+								tt.errCode, er.Code(), er.Message(), tt.name)
 						}
 					}
 					break
 				}
 				data = append(data, response.GetResults())
 			}
-
+			if len(data) != tt.res_len {
+				t.Errorf("requested data and received data doesn't match for test: %v ", tt.name)
+			}
+			for i, d := range data {
+				t.Logf("i: %v data: %v ", i, d)
+			}
 		})
 	}
 }

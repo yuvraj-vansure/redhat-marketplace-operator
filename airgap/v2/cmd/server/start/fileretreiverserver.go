@@ -16,6 +16,7 @@ package server
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang/protobuf/ptypes"
@@ -126,15 +127,28 @@ func (frs *FileRetreiverServer) ListFileMetadata(lis *fileretreiver.ListFileMeta
 	conditionList := []*database.Condition{}
 
 	for _, sortOrder := range sortOrders {
-		key := sortOrder.GetKey()
-		order := sortOrder.GetSortOrder().String()
+		key := strings.TrimSpace(sortOrder.GetKey())
+		order := strings.TrimSpace(sortOrder.GetSortOrder().String())
+		if len(key) == 0 {
+			return status.Errorf(
+				codes.InvalidArgument,
+				fmt.Sprintln("Cannot pass empty key for sort operation."),
+			)
+		}
 		sortOrderList = append(sortOrderList, &database.SortOrder{Key: key, Order: order})
 	}
 	//parse and convert raw filter operators to database friendly operators
 	for _, filter := range filters {
-		key := filter.GetKey()
-		val := filter.GetValue()
-		rawOperator := filter.GetOperator().String()
+		key := strings.TrimSpace(filter.GetKey())
+		val := strings.TrimSpace(filter.GetValue())
+		rawOperator := strings.TrimSpace(filter.GetOperator().String())
+
+		if len(key) == 0 || len(val) == 0 {
+			return status.Errorf(
+				codes.InvalidArgument,
+				fmt.Sprintln("Cannot pass empty key/value for filter operation."),
+			)
+		}
 
 		var operator string
 		switch rawOperator {
