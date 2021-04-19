@@ -51,9 +51,6 @@ var (
 	lc  Listconfig
 	log logr.Logger
 )
-var (
-	long = ""
-)
 
 var ListCmd = &cobra.Command{
 	Use:   "list",
@@ -194,7 +191,7 @@ func (lc *Listconfig) listFileMetadata() error {
 
 	resultStream, err := lc.client.ListFileMetadata(context.Background(), req)
 	if err != nil {
-		return fmt.Errorf("Failed to retrieve list due to: %v", err)
+		return fmt.Errorf("failed to retrieve list due to: %v", err)
 	}
 
 	fp := lc.outputDir + string(os.PathSeparator) + "files.csv"
@@ -316,7 +313,7 @@ func parseFilterOperator(op string, isColumn bool) (*fileretreiver.ListFileMetad
 		case "CONTAINS":
 			operator = fileretreiver.ListFileMetadataRequest_ListFileFilter_CONTAINS
 		default:
-			return nil, fmt.Errorf("Invalid filter operation used: %v ", op)
+			return nil, fmt.Errorf("invalid filter operation used: %v ", op)
 		}
 	} else {
 		switch op {
@@ -325,7 +322,7 @@ func parseFilterOperator(op string, isColumn bool) (*fileretreiver.ListFileMetad
 		case "CONTAINS":
 			operator = fileretreiver.ListFileMetadataRequest_ListFileFilter_CONTAINS
 		default:
-			return nil, fmt.Errorf("Invalid filter operation used: %v ", op)
+			return nil, fmt.Errorf("invalid filter operation used: %v ", op)
 		}
 	}
 
@@ -349,10 +346,10 @@ func parseSort(sort_list []string) ([]*fileretreiver.ListFileMetadataRequest_Lis
 		sort_args := parseArgs(sort_string)
 
 		if len(sort_args) != 2 {
-			return nil, fmt.Errorf("'%v' : Invalid number of arguments provided for sort operation, Required 2 | Provided %v ", sort_string, len(sort_args))
+			return nil, fmt.Errorf("'%v' : invalid number of arguments provided for sort operation, Required 2 | Provided %v ", sort_string, len(sort_args))
 		}
 		if !modelColumnSet[sort_args[0]] {
-			return nil, fmt.Errorf("Invalid operand passed for sort operation: %v ", sort_args[0])
+			return nil, fmt.Errorf("invalid operand passed for sort operation: %v ", sort_args[0])
 		}
 		operator, err := parseSortOperator(sort_args[1])
 		if err != nil {
@@ -377,7 +374,7 @@ func parseSortOperator(op string) (*fileretreiver.ListFileMetadataRequest_ListFi
 	case "DESC":
 		operator = fileretreiver.ListFileMetadataRequest_ListFileSort_DESC
 	default:
-		return nil, fmt.Errorf("Invalid sort operation used: %v", op)
+		return nil, fmt.Errorf("invalid sort operation used: %v", op)
 	}
 
 	return &operator, nil
@@ -494,7 +491,8 @@ func getHeaders() []string {
 		"created_at",
 		"compression",
 		"compression_type",
-		"metadata"}
+		"metadata",
+	}
 }
 
 func printList(r []string) error {

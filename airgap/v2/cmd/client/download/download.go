@@ -265,6 +265,11 @@ func getExpectedCSVHeaders() []string {
 	return []string{
 		"file_identifier",
 		"file_name",
+		"size",
+		"created_at",
+		"compression",
+		"compression_type",
+		"metadata",
 	}
 }
 
