@@ -488,13 +488,13 @@ func writeToCSV(row []string, writer *csv.Writer) error {
 
 // returns headers for csv
 func getHeaders() []string {
-	return []string{"FILE ID",
-		"FILE NAME",
-		"SIZE",
-		"CREATED AT",
-		"COMPRESSION",
-		"COMPRESION TYPE",
-		"METADATA"}
+	return []string{"file_identifier",
+		"file_name",
+		"size",
+		"created_at",
+		"compression",
+		"compression_type",
+		"metadata"}
 }
 
 func printList(r []string) error {
