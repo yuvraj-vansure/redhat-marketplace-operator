@@ -120,12 +120,12 @@ func (d *Database) DownloadFile(finfo *v1.FileID) (*models.Metadata, error) {
 
 	// Perform validations and query
 	if len(fileid) != 0 {
-		d.DB.Where("provided_id = ?", fileid).
+		d.DB.Where("provided_id = ? AND deleted_at = ?", fileid, 0).
 			Order("created_at desc").
 			Preload(clause.Associations).
 			First(&meta)
 	} else if len(filename) != 0 {
-		d.DB.Where("provided_name = ?", filename).
+		d.DB.Where("provided_name = ? AND deleted_at = ?", filename, 0).
 			Order("created_at desc").
 			Preload(clause.Associations).
 			First(&meta)
@@ -245,6 +245,7 @@ func (d *Database) ListFileMetadata(conditionList []*Condition, sortOrderList []
 		queryChain.Distinct().
 			Group("provided_name, provided_id").
 			Having("created_at = max(created_at)").
+			Having("deleted_at = 0 ").
 			Preload("FileMetadata").
 			Find(&metadataList)
 	} else {
@@ -252,6 +253,7 @@ func (d *Database) ListFileMetadata(conditionList []*Condition, sortOrderList []
 			Distinct().
 			Group("provided_name, provided_id").
 			Having("created_at = max(created_at)").
+			Having("deleted_at = 0 ").
 			Preload("FileMetadata").
 			Find(&metadataList)
 	}
@@ -333,6 +335,11 @@ func (d *Database) clearFileContent(fileList []string) {
 		d.DB.Model(&models.File{}).
 			Where("id = ?", fileList[i]).
 			Update("Content", content)
+
+		// update deleted_at of the file
+		d.DB.Model(&models.Metadata{}).
+			Where("file_id = ?", fileList[i]).
+			Update("deleted_at", time.Now().Unix())
 	}
 }
 
@@ -385,20 +392,23 @@ func (d *Database) UpdateFileMetadata(fid *v1.FileID, metadata map[string]string
 				Not(models.Metadata{ID: latestMeta.ID}).
 				Find(&meta)
 		}
-		matched := matchMetadata(latestMeta.FileMetadata, metadata)
-		updatedMeta := d.getFileMetaToUpdate(*latestMeta, metadata, matched)
-		d.updateTableFileMetadata(latestMeta.ID, updatedMeta)
+		matched := d.MatchMetadata(latestMeta.FileMetadata, metadata)
+		if matched {
+			updatedMeta := d.getFileMetaToUpdate(*latestMeta, metadata)
+			d.updateTableFileMetadata(latestMeta.ID, updatedMeta)
 
-		for _, m := range meta {
-			updatedMeta := d.getFileMetaToUpdate(m, metadata, matched)
-			d.updateTableFileMetadata(m.ID, updatedMeta)
+			for _, m := range meta {
+				updatedMeta := d.getFileMetaToUpdate(m, metadata)
+				d.updateTableFileMetadata(m.ID, updatedMeta)
+			}
 		}
 	}
 
 	return nil
 }
 
-func matchMetadata(old []models.FileMetadata, updateTo map[string]string) bool {
+// matchMetadata returns true if metadata in request and metadata of latest file matches else false
+func (d *Database) MatchMetadata(old []models.FileMetadata, updateTo map[string]string) bool {
 
 	if len(updateTo) == 0 {
 		return false
@@ -434,19 +444,17 @@ func matchMetadata(old []models.FileMetadata, updateTo map[string]string) bool {
 }
 
 // GetFileMetaToUpdate returns metadata object required for updating file metadata
-func (d *Database) getFileMetaToUpdate(old models.Metadata, nMeta map[string]string, updateMeta bool) []models.FileMetadata {
-
+func (d *Database) getFileMetaToUpdate(old models.Metadata, nMeta map[string]string) []models.FileMetadata {
 	var fms []models.FileMetadata
-	if updateMeta {
-		m := nMeta
-		for k, v := range m {
-			fm := models.FileMetadata{
-				MetadataID: old.ID,
-				Key:        k,
-				Value:      v,
-			}
-			fms = append(fms, fm)
+	m := nMeta
+
+	for k, v := range m {
+		fm := models.FileMetadata{
+			MetadataID: old.ID,
+			Key:        k,
+			Value:      v,
 		}
+		fms = append(fms, fm)
 	}
 
 	return fms

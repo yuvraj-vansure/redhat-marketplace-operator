@@ -15,9 +15,11 @@
 package database_test
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -29,6 +31,7 @@ import (
 	"github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/pkg/database"
 	"github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/pkg/models"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -215,8 +218,19 @@ func TestDatabase_DownloadFile(t *testing.T) {
 					{Key: "version", Value: "2"},
 					{Key: "type", Value: "report"},
 				},
+				File: models.File{Content: []byte("reports.zip")},
 			},
 			errMsg: "",
+		},
+		{
+			name: "download a file with purged content",
+			fid: &v1.FileID{
+				Data: &v1.FileID_Name{
+					Name: "delete1.txt",
+				},
+			},
+			m:      nil,
+			errMsg: fmt.Sprintf("no file found for provided_name: %v / provided_id: %v", "delete1.txt", ""),
 		},
 		{
 			name: "invalid method call to download a file that doesn't exist",
@@ -262,6 +276,12 @@ func TestDatabase_DownloadFile(t *testing.T) {
 
 				if len(tt.m.FileMetadata) != len(m.FileMetadata) {
 					t.Errorf("Expected metadata keys: %v, instead got: %v", tt.m.Size, m.Size)
+				}
+
+				// contentMatch := bytes.Compare(tt.m.File.Content, m.File.Content)
+
+				if string(tt.m.File.Content) != string(bytes.Trim(m.File.Content, "\x00")) {
+					t.Errorf("Expected file content %v, instead got: %v", string(tt.m.File.Content), string(m.File.Content))
 				}
 			}
 		})
@@ -474,8 +494,8 @@ func TestDatabase_ListFileMetadata(t *testing.T) {
 			conditionList: []*database.Condition{
 				{
 					Key:      "provided_name",
-					Operator: "LIKE",
-					Value:    "delete",
+					Operator: "=",
+					Value:    "delete.txt",
 				},
 			},
 			sortList:            []*database.SortOrder{},
@@ -493,6 +513,20 @@ func TestDatabase_ListFileMetadata(t *testing.T) {
 				},
 			},
 			errMsg: "",
+		},
+		{
+			name: "fetch list of deleted file",
+			conditionList: []*database.Condition{
+				{
+					Key:      "provided_name",
+					Operator: "=",
+					Value:    "delete1.txt",
+				},
+			},
+			sortList:            []*database.SortOrder{},
+			includeDeletedFiles: true,
+			m:                   []*models.Metadata{},
+			errMsg:              "",
 		},
 	}
 
@@ -720,12 +754,182 @@ func TestDatabase_GetFileMetadata(t *testing.T) {
 	}
 }
 
+func TestDatabase_UpdateFileMetadata(t *testing.T) {
+	err := initLog()
+	if err != nil {
+		t.Fatalf("Couldn't initialize logger: %v", err)
+	}
+
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("Couldn't create sqlite connection")
+	}
+	defer closeDBConnection(db)
+
+	//Perform migrations
+	db.AutoMigrate(&models.FileMetadata{}, &models.File{}, &models.Metadata{})
+
+	database := &database.Database{
+		DB:  db,
+		Log: logger,
+	}
+
+	populateDataset(database, t)
+
+	tests := []struct {
+		name     string
+		fid      *v1.FileID
+		metadata map[string]string
+		errMsg   string
+	}{
+		{
+			name: "update file metadata",
+			fid:  &v1.FileID{Data: &v1.FileID_Name{Name: "reports.zip"}},
+			metadata: map[string]string{
+				"type":    "report",
+				"version": "latest",
+			},
+			errMsg: "",
+		},
+		{
+			name: "invalid fileId",
+			fid:  &v1.FileID{Data: &v1.FileID_Name{Name: "invalid file"}},
+			metadata: map[string]string{
+				"type":    "report",
+				"version": "latest",
+			},
+			errMsg: "no file found for provided_name:",
+		},
+		{
+			name:     "empty metadata",
+			fid:      &v1.FileID{Data: &v1.FileID_Name{Name: "reports.zip"}},
+			metadata: map[string]string{},
+			errMsg:   "nil arguments received: metadata: map[]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := database.UpdateFileMetadata(tt.fid, tt.metadata)
+			if err != nil {
+				if !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("Expected error message: %v, instead got: %v", tt.errMsg, err.Error())
+				}
+			} else if len(tt.errMsg) > 0 {
+				t.Errorf("Expected error: %v was never received!", tt.errMsg)
+			} else {
+				fileMeta, err := database.GetFileMetadata(tt.fid)
+				if err != nil {
+					t.Errorf("Unexpected error while fetching file metadata: %v", err)
+				}
+				if len(tt.metadata) == len(fileMeta.FileMetadata) {
+					match := database.MatchMetadata(fileMeta.FileMetadata, tt.metadata)
+					if match {
+						t.Errorf("Expected metadata does not match with updated")
+					}
+				} else {
+					t.Errorf("Expected length of updated metadata does not match, Expected: %v Got %v", len(tt.metadata), len(fileMeta.FileMetadata))
+				}
+			}
+
+		})
+	}
+}
+
+func TestDatabase_CleanTombstones(t *testing.T) {
+	err := initLog()
+	if err != nil {
+		t.Fatalf("Couldn't initialize logger: %v", err)
+	}
+
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("Couldn't create sqlite connection")
+	}
+	defer closeDBConnection(db)
+
+	//Perform migrations
+	db.AutoMigrate(&models.FileMetadata{}, &models.File{}, &models.Metadata{})
+
+	database := &database.Database{
+		DB:  db,
+		Log: logger,
+	}
+
+	populateDataset(database, t)
+	tests := []struct {
+		name     string
+		before   timestamppb.Timestamp
+		purgeAll bool
+		fids     []*v1.FileID
+		errMsg   string
+	}{
+		{
+			name:     "clear file contents",
+			before:   timestamppb.Timestamp{Seconds: int64(before + 1)},
+			purgeAll: false,
+			fids: []*v1.FileID{
+				{Data: &v1.FileID_Name{Name: "delete1.txt"}},
+			},
+		},
+		{
+			name:     "clear file contents",
+			before:   timestamppb.Timestamp{Seconds: int64(after + 1)},
+			purgeAll: false,
+			fids: []*v1.FileID{
+				{
+					Data: &v1.FileID_Name{
+						Name: "delete1.txt",
+					},
+				},
+				{
+					Data: &v1.FileID_Name{
+						Name: "delete2.txt",
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fids, err := database.CleanTombstones(&tt.before, tt.purgeAll)
+			if err != nil {
+				if !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("Expected error message: %v, instead got: %v", tt.errMsg, err.Error())
+				}
+			} else if len(tt.errMsg) > 0 {
+				t.Errorf("Expected error: %v was never received!", tt.errMsg)
+			}
+
+			if len(fids) != len(tt.fids) {
+				t.Errorf("Expected FId list was never received! \n Expected: %v \n Got: %v ", tt.fids, fids)
+			}
+
+			if !reflect.DeepEqual(fids, tt.fids) {
+				t.Errorf("Expected FId list was never received! \n Expected: %v \n Got: %v ", tt.fids, fids)
+			}
+		})
+	}
+}
+
 // populateDataset populates database with the files needed for testing
 func populateDataset(database *database.Database, t *testing.T) {
 	deleteFID := &v1.FileID{
 		Data: &v1.FileID_Name{
 			Name: "delete.txt",
-		}}
+		},
+	}
+	deleteFID1 := &v1.FileID{
+		Data: &v1.FileID_Name{
+			Name: "delete1.txt",
+		},
+	}
+	deleteFID2 := &v1.FileID{
+		Data: &v1.FileID_Name{
+			Name: "delete2.txt",
+		},
+	}
 	reportsFID := &v1.FileID{
 		Data: &v1.FileID_Name{
 			Name: "reports.zip",
@@ -794,10 +998,29 @@ func populateDataset(database *database.Database, t *testing.T) {
 				"description": "file marked for deletion",
 			},
 		},
+		{
+			FileId:      deleteFID1,
+			Size:        1500,
+			Compression: false,
+			Metadata: map[string]string{
+				"description": "file marked for deletion, and purged file content",
+			},
+		},
+		{
+			FileId:      deleteFID2,
+			Size:        1500,
+			Compression: false,
+			Metadata: map[string]string{
+				"description": "file marked for deletion, and purged file content",
+			},
+		},
 	}
 	// Upload files to mock server
 	for i := range files {
-		bs := make([]byte, files[i].Size)
+		b := []byte((files[i].GetFileId().GetName()))
+		bs := make([]byte, (files[i].Size - uint32(len(b))))
+		bs = append(bs, b...)
+		files[i].Size = uint32(len(bs))
 		dbErr := database.SaveFile(&files[i], bs)
 		if dbErr != nil {
 			t.Fatalf("Couldn't save file due to:%v", dbErr)
@@ -810,13 +1033,29 @@ func populateDataset(database *database.Database, t *testing.T) {
 	// update created_at for files
 	setCreatedAt(reportsFID.GetName(), before, database)
 	setCreatedAt(marketplaceFID.GetName(), after, database)
+	setDeletedAt(deleteFID1.GetName(), before, database)
+	setTombstone(deleteFID1.GetName(), before, database)
+	setTombstone(deleteFID2.GetName(), after, database)
 	time.Sleep(1 * time.Second)
 }
 
 // setCreatedAt modifies the created date for provided file
 func setCreatedAt(fname string, cat int, d *database.Database) {
+	d.DB.Model(&models.Metadata{}).
+		Where("provided_name = ?", fname).
+		Update("created_at", cat)
+}
+
+// setDeletedAt modifies deleted_at for provided file
+func setDeletedAt(fname string, del int, d *database.Database) {
+	d.DB.Model(&models.Metadata{}).
+		Where("provided_name = ?", fname).
+		Update("deleted_at", del)
+}
+
+func setTombstone(fname string, tomb int, d *database.Database) {
 	m := &models.Metadata{}
 	d.DB.Model(&m).
 		Where("provided_name = ?", fname).
-		Update("created_at", cat)
+		Update("clean_tombstone_set_at", tomb)
 }
