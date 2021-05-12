@@ -37,7 +37,8 @@ type FileStore interface {
 	TombstoneFile(finfo *v1.FileID) error
 	ListFileMetadata([]*Condition, []*SortOrder, bool) ([]models.Metadata, error)
 	GetFileMetadata(finfo *v1.FileID) (*models.Metadata, error)
-	CleanTombstones(Before *timestamppb.Timestamp, PurgeAll bool) ([]*v1.FileID, error)
+	CleanTombstones(before *timestamppb.Timestamp, PurgeAll bool) ([]*v1.FileID, error)
+	UpdateFileMetadata(fid *v1.FileID, metadata map[string]string) error
 }
 
 type Database struct {
@@ -347,4 +348,112 @@ func (d *Database) deleteFile(file_id []string, metadata_id []string) {
 		d.DB.Where("id = ?", file_id[i]).
 			Delete(&models.File{})
 	}
+}
+
+// UpdateFileMetadata updates file info/metadata of provided FileID
+func (d *Database) UpdateFileMetadata(fid *v1.FileID, metadata map[string]string) error {
+
+	fileid := strings.TrimSpace(fid.GetId())
+	filename := strings.TrimSpace(fid.GetName())
+
+	if len(fileid) == 0 && len(filename) == 0 {
+		return fmt.Errorf("file id/name is blank")
+	}
+
+	if len(metadata) == 0 {
+		return fmt.Errorf("nil arguments received: metadata: %v ", metadata)
+	} else {
+
+		latestMeta, err := d.GetFileMetadata(fid)
+		if err != nil {
+			return err
+		}
+		if reflect.DeepEqual(latestMeta, models.Metadata{}) {
+			return fmt.Errorf("no file found for provided_name: %v / provided_id: %v", filename, fileid)
+		}
+
+		var meta []models.Metadata
+		if len(fileid) != 0 {
+			d.DB.Select("*").
+				Where("provided_id = ?", fileid).
+				Not(models.Metadata{ID: latestMeta.ID}).
+				Find(&meta)
+
+		} else if len(filename) != 0 {
+			d.DB.Select("*").
+				Where("provided_name = ?", filename).
+				Not(models.Metadata{ID: latestMeta.ID}).
+				Find(&meta)
+		}
+		matched := matchMetadata(latestMeta.FileMetadata, metadata)
+		updatedMeta := d.getFileMetaToUpdate(*latestMeta, metadata, matched)
+		d.updateTableFileMetadata(latestMeta.ID, updatedMeta)
+
+		for _, m := range meta {
+			updatedMeta := d.getFileMetaToUpdate(m, metadata, matched)
+			d.updateTableFileMetadata(m.ID, updatedMeta)
+		}
+	}
+
+	return nil
+}
+
+func matchMetadata(old []models.FileMetadata, updateTo map[string]string) bool {
+
+	if len(updateTo) == 0 {
+		return false
+	} else if len(old) == 0 {
+		return true
+	}
+	if len(old) != len(updateTo) {
+		return true
+	}
+
+	oldFms := make(map[string]string)
+	for _, fm := range old {
+		oldFms[fm.Key] = fm.Value
+	}
+
+	oldKeys := reflect.ValueOf(oldFms).MapKeys()
+	newKeys := reflect.ValueOf(updateTo).MapKeys()
+
+	diff := make(map[string]int, len(oldKeys))
+	for _, k := range oldKeys {
+		diff[k.String()]++
+	}
+	for _, k := range newKeys {
+		if _, ok := diff[k.String()]; !ok {
+			return true
+		}
+		if oldFms[k.String()] != updateTo[k.String()] {
+			return true
+		}
+	}
+
+	return false
+}
+
+// GetFileMetaToUpdate returns metadata object required for updating file metadata
+func (d *Database) getFileMetaToUpdate(old models.Metadata, nMeta map[string]string, updateMeta bool) []models.FileMetadata {
+
+	var fms []models.FileMetadata
+	if updateMeta {
+		m := nMeta
+		for k, v := range m {
+			fm := models.FileMetadata{
+				MetadataID: old.ID,
+				Key:        k,
+				Value:      v,
+			}
+			fms = append(fms, fm)
+		}
+	}
+
+	return fms
+}
+
+// updateTableFileMetadata updates FileMetadata of provided id of file
+func (d *Database) updateTableFileMetadata(id string, m []models.FileMetadata) {
+	d.DB.Where("metadata_id = ?", id).Delete(models.FileMetadata{})
+	d.DB.Save(m)
 }
