@@ -26,6 +26,7 @@ import (
 	"github.com/go-logr/logr"
 	v1 "github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/apis/model/v1"
 	"github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/pkg/models"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -36,6 +37,7 @@ type FileStore interface {
 	TombstoneFile(finfo *v1.FileID) error
 	ListFileMetadata([]*Condition, []*SortOrder, bool) ([]models.Metadata, error)
 	GetFileMetadata(finfo *v1.FileID) (*models.Metadata, error)
+	CleanTombstones(Before *timestamppb.Timestamp, PurgeAll bool) ([]*v1.FileID, error)
 }
 
 type Database struct {
@@ -284,4 +286,65 @@ func (d *Database) GetFileMetadata(finfo *v1.FileID) (*models.Metadata, error) {
 
 	d.Log.Info("Retreived metadata of file", "id", meta.FileID)
 	return &meta, nil
+}
+
+// CleanTombstones remove file content/delete tombstoned files record from database if present
+func (d *Database) CleanTombstones(before *timestamppb.Timestamp, purgeAll bool) ([]*v1.FileID, error) {
+	cts := before.Seconds
+	metadataList := []models.Metadata{}
+	if len(before.String()) != 0 {
+		d.DB.Select("file_id", "id", "provided_id", "provided_name").
+			Where("clean_tombstone_set_at < (?) AND clean_tombstone_set_at > (?)", cts, 0).
+			Find(&metadataList)
+	}
+
+	var fileList []*v1.FileID
+	var file_id []string
+	var metadata_id []string
+	for _, list := range metadataList {
+
+		file_id = append(file_id, list.FileID)
+		metadata_id = append(metadata_id, list.ID)
+
+		if len(list.ProvidedId) != 0 {
+			fid := v1.FileID{Data: &v1.FileID_Id{Id: list.ProvidedId}}
+			fileList = append(fileList, &fid)
+
+		} else if len(list.ProvidedName) != 0 {
+			fid := v1.FileID{Data: &v1.FileID_Name{Name: list.ProvidedName}}
+			fileList = append(fileList, &fid)
+		}
+	}
+
+	if purgeAll {
+		d.deleteFile(file_id, metadata_id)
+	} else {
+		d.clearFileContent(file_id)
+	}
+
+	return fileList, nil
+}
+
+// clearFileContent removes content of the files
+func (d *Database) clearFileContent(fileList []string) {
+	var content []byte
+	for i := range fileList {
+		d.DB.Model(&models.File{}).
+			Where("id = ?", fileList[i]).
+			Update("Content", content)
+	}
+}
+
+// deleteFile deletes all files and its metadata for given file_id and metadata_id
+func (d *Database) deleteFile(file_id []string, metadata_id []string) {
+	for i := range metadata_id {
+		d.DB.Where("metadata_id = ?", metadata_id[i]).
+			Delete(&models.FileMetadata{})
+		d.DB.Where("id = ?", metadata_id[i]).
+			Delete(&models.Metadata{})
+	}
+	for i := range file_id {
+		d.DB.Where("id = ?", file_id[i]).
+			Delete(&models.File{})
+	}
 }
