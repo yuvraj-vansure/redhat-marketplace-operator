@@ -298,7 +298,7 @@ func (d *Database) CleanTombstones(before *timestamppb.Timestamp, purgeAll bool)
 	if len(before.String()) != 0 {
 		d.DB.Select("file_id", "id", "provided_id", "provided_name").
 			Where("clean_tombstone_set_at < (?) AND clean_tombstone_set_at > (?)", before.Seconds, 0).
-			Where("deleted_at <> ?", 0).
+			Where("deleted_at = ?", 0).
 			Find(&metadataList)
 	}
 
