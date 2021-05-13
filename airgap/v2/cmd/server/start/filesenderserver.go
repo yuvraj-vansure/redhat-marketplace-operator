@@ -82,7 +82,7 @@ func (fss *FileSenderServer) UpdateFileMetadata(ctx context.Context, in *filesen
 	if err != nil {
 		return nil, status.Errorf(
 			codes.Unknown,
-			fmt.Sprintf("Failed to save file in database: %v", err),
+			fmt.Sprintf("Failed to update: %v", err),
 		)
 	}
 

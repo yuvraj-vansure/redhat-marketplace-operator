@@ -245,7 +245,7 @@ func (d *Database) ListFileMetadata(conditionList []*Condition, sortOrderList []
 		queryChain.Distinct().
 			Group("provided_name, provided_id").
 			Having("created_at = max(created_at)").
-			Having("deleted_at = 0 ").
+			Having("deleted_at = 0").
 			Preload("FileMetadata").
 			Find(&metadataList)
 	} else {
@@ -253,7 +253,7 @@ func (d *Database) ListFileMetadata(conditionList []*Condition, sortOrderList []
 			Distinct().
 			Group("provided_name, provided_id").
 			Having("created_at = max(created_at)").
-			Having("deleted_at = 0 ").
+			Having("deleted_at = 0").
 			Preload("FileMetadata").
 			Find(&metadataList)
 	}
@@ -291,30 +291,30 @@ func (d *Database) GetFileMetadata(finfo *v1.FileID) (*models.Metadata, error) {
 	return &meta, nil
 }
 
-// CleanTombstones remove file content/delete tombstoned files record from database if present
+// CleanTombstones allows us to clear file content if purgeAll is false or delete file and it's database record if purgeAll is true
 func (d *Database) CleanTombstones(before *timestamppb.Timestamp, purgeAll bool) ([]*v1.FileID, error) {
-	cts := before.Seconds
+
 	metadataList := []models.Metadata{}
 	if len(before.String()) != 0 {
 		d.DB.Select("file_id", "id", "provided_id", "provided_name").
-			Where("clean_tombstone_set_at < (?) AND clean_tombstone_set_at > (?)", cts, 0).
+			Where("clean_tombstone_set_at < (?) AND clean_tombstone_set_at > (?)", before.Seconds, 0).
+			Where("deleted_at <> ?", 0).
 			Find(&metadataList)
 	}
 
 	var fileList []*v1.FileID
 	var file_id []string
 	var metadata_id []string
-	for _, list := range metadataList {
+	for _, metadata := range metadataList {
 
-		file_id = append(file_id, list.FileID)
-		metadata_id = append(metadata_id, list.ID)
+		file_id = append(file_id, metadata.FileID)
+		metadata_id = append(metadata_id, metadata.ID)
 
-		if len(list.ProvidedId) != 0 {
-			fid := v1.FileID{Data: &v1.FileID_Id{Id: list.ProvidedId}}
+		if len(metadata.ProvidedId) != 0 {
+			fid := v1.FileID{Data: &v1.FileID_Id{Id: metadata.ProvidedId}}
 			fileList = append(fileList, &fid)
-
-		} else if len(list.ProvidedName) != 0 {
-			fid := v1.FileID{Data: &v1.FileID_Name{Name: list.ProvidedName}}
+		} else if len(metadata.ProvidedName) != 0 {
+			fid := v1.FileID{Data: &v1.FileID_Name{Name: metadata.ProvidedName}}
 			fileList = append(fileList, &fid)
 		}
 	}
@@ -371,36 +371,39 @@ func (d *Database) UpdateFileMetadata(fid *v1.FileID, metadata map[string]string
 		return fmt.Errorf("nil arguments received: metadata: %v ", metadata)
 	} else {
 
-		latestMeta, err := d.GetFileMetadata(fid)
+		latestFileMetadata, err := d.GetFileMetadata(fid)
 		if err != nil {
 			return err
 		}
-		if reflect.DeepEqual(latestMeta, models.Metadata{}) {
+		if reflect.DeepEqual(latestFileMetadata, models.Metadata{}) {
 			return fmt.Errorf("no file found for provided_name: %v / provided_id: %v", filename, fileid)
 		}
 
-		var meta []models.Metadata
-		if len(fileid) != 0 {
-			d.DB.Select("*").
-				Where("provided_id = ?", fileid).
-				Not(models.Metadata{ID: latestMeta.ID}).
-				Find(&meta)
+		matched := d.matchMetadata(latestFileMetadata.FileMetadata, metadata)
+		if !matched {
+			updatedMeta := d.createMetadataModels(*latestFileMetadata, metadata)
+			d.updateFileMetadata(latestFileMetadata.ID, updatedMeta)
 
-		} else if len(filename) != 0 {
-			d.DB.Select("*").
-				Where("provided_name = ?", filename).
-				Not(models.Metadata{ID: latestMeta.ID}).
-				Find(&meta)
-		}
-		matched := d.MatchMetadata(latestMeta.FileMetadata, metadata)
-		if matched {
-			updatedMeta := d.getFileMetaToUpdate(*latestMeta, metadata)
-			d.updateTableFileMetadata(latestMeta.ID, updatedMeta)
+			var meta []models.Metadata
+			if len(fileid) != 0 {
+				d.DB.Select("*").
+					Where("provided_id = ?", fileid).
+					Not(models.Metadata{ID: latestFileMetadata.ID}).
+					Find(&meta)
+
+			} else if len(filename) != 0 {
+				d.DB.Select("*").
+					Where("provided_name = ?", filename).
+					Not(models.Metadata{ID: latestFileMetadata.ID}).
+					Find(&meta)
+			}
 
 			for _, m := range meta {
-				updatedMeta := d.getFileMetaToUpdate(m, metadata)
-				d.updateTableFileMetadata(m.ID, updatedMeta)
+				updatedMeta := d.createMetadataModels(m, metadata)
+				d.updateFileMetadata(m.ID, updatedMeta)
 			}
+		} else {
+			return fmt.Errorf("connot update file metadata, as metadata of latest file and update request is same")
 		}
 	}
 
@@ -408,47 +411,27 @@ func (d *Database) UpdateFileMetadata(fid *v1.FileID, metadata map[string]string
 }
 
 // matchMetadata returns true if metadata in request and metadata of latest file matches else false
-func (d *Database) MatchMetadata(old []models.FileMetadata, updateTo map[string]string) bool {
+func (d *Database) matchMetadata(old []models.FileMetadata, updateTo map[string]string) bool {
 
 	if len(updateTo) == 0 {
+		return true
+	} else if len(old) != len(updateTo) {
 		return false
-	} else if len(old) == 0 {
-		return true
-	}
-	if len(old) != len(updateTo) {
-		return true
 	}
 
 	oldFms := make(map[string]string)
 	for _, fm := range old {
 		oldFms[fm.Key] = fm.Value
 	}
+	eq := reflect.DeepEqual(oldFms, updateTo)
 
-	oldKeys := reflect.ValueOf(oldFms).MapKeys()
-	newKeys := reflect.ValueOf(updateTo).MapKeys()
-
-	diff := make(map[string]int, len(oldKeys))
-	for _, k := range oldKeys {
-		diff[k.String()]++
-	}
-	for _, k := range newKeys {
-		if _, ok := diff[k.String()]; !ok {
-			return true
-		}
-		if oldFms[k.String()] != updateTo[k.String()] {
-			return true
-		}
-	}
-
-	return false
+	return eq
 }
 
-// GetFileMetaToUpdate returns metadata object required for updating file metadata
-func (d *Database) getFileMetaToUpdate(old models.Metadata, nMeta map[string]string) []models.FileMetadata {
+// createMetadataModels returns metadata object required for updating file metadata
+func (d *Database) createMetadataModels(old models.Metadata, newMeta map[string]string) []models.FileMetadata {
 	var fms []models.FileMetadata
-	m := nMeta
-
-	for k, v := range m {
+	for k, v := range newMeta {
 		fm := models.FileMetadata{
 			MetadataID: old.ID,
 			Key:        k,
@@ -460,8 +443,10 @@ func (d *Database) getFileMetaToUpdate(old models.Metadata, nMeta map[string]str
 	return fms
 }
 
-// updateTableFileMetadata updates FileMetadata of provided id of file
-func (d *Database) updateTableFileMetadata(id string, m []models.FileMetadata) {
+// updateFileMetadata updates FileMetadata of provided id of file
+func (d *Database) updateFileMetadata(id string, m []models.FileMetadata) {
+	// deletes file metadata for given id
 	d.DB.Where("metadata_id = ?", id).Delete(models.FileMetadata{})
+	// insert new file metadata
 	d.DB.Save(m)
 }

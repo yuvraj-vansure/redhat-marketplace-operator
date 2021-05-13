@@ -278,8 +278,6 @@ func TestDatabase_DownloadFile(t *testing.T) {
 					t.Errorf("Expected metadata keys: %v, instead got: %v", tt.m.Size, m.Size)
 				}
 
-				// contentMatch := bytes.Compare(tt.m.File.Content, m.File.Content)
-
 				if string(tt.m.File.Content) != string(bytes.Trim(m.File.Content, "\x00")) {
 					t.Errorf("Expected file content %v, instead got: %v", string(tt.m.File.Content), string(m.File.Content))
 				}
@@ -789,7 +787,15 @@ func TestDatabase_UpdateFileMetadata(t *testing.T) {
 				"type":    "report",
 				"version": "latest",
 			},
-			errMsg: "",
+		},
+		{
+			name: "update file metadata with same metadata",
+			fid:  &v1.FileID{Data: &v1.FileID_Name{Name: "reports.zip"}},
+			metadata: map[string]string{
+				"type":    "report",
+				"version": "latest",
+			},
+			errMsg: "connot update file metadata, as metadata of latest file and update request is same",
 		},
 		{
 			name: "invalid fileId",
@@ -823,8 +829,8 @@ func TestDatabase_UpdateFileMetadata(t *testing.T) {
 					t.Errorf("Unexpected error while fetching file metadata: %v", err)
 				}
 				if len(tt.metadata) == len(fileMeta.FileMetadata) {
-					match := database.MatchMetadata(fileMeta.FileMetadata, tt.metadata)
-					if match {
+					match := matchMetadata(fileMeta.FileMetadata, tt.metadata)
+					if !match {
 						t.Errorf("Expected metadata does not match with updated")
 					}
 				} else {
@@ -891,23 +897,23 @@ func TestDatabase_CleanTombstones(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			fids, err := database.CleanTombstones(&tt.before, tt.purgeAll)
+	for i := range tests {
+		t.Run(tests[i].name, func(t *testing.T) {
+			fids, err := database.CleanTombstones(&tests[i].before, tests[i].purgeAll)
 			if err != nil {
-				if !strings.Contains(err.Error(), tt.errMsg) {
-					t.Errorf("Expected error message: %v, instead got: %v", tt.errMsg, err.Error())
+				if !strings.Contains(err.Error(), tests[i].errMsg) {
+					t.Errorf("Expected error message: %v, instead got: %v", tests[i].errMsg, err.Error())
 				}
-			} else if len(tt.errMsg) > 0 {
-				t.Errorf("Expected error: %v was never received!", tt.errMsg)
+			} else if len(tests[i].errMsg) > 0 {
+				t.Errorf("Expected error: %v was never received!", tests[i].errMsg)
 			}
 
-			if len(fids) != len(tt.fids) {
-				t.Errorf("Expected FId list was never received! \n Expected: %v \n Got: %v ", tt.fids, fids)
+			if len(fids) != len(tests[i].fids) {
+				t.Errorf("Expected FId list was never received! \n Expected: %v \n Got: %v ", tests[i].fids, fids)
 			}
 
-			if !reflect.DeepEqual(fids, tt.fids) {
-				t.Errorf("Expected FId list was never received! \n Expected: %v \n Got: %v ", tt.fids, fids)
+			if !reflect.DeepEqual(fids, tests[i].fids) {
+				t.Errorf("Expected FId list was never received! \n Expected: %v \n Got: %v ", tests[i].fids, fids)
 			}
 		})
 	}
@@ -1017,7 +1023,7 @@ func populateDataset(database *database.Database, t *testing.T) {
 	}
 	// Upload files to mock server
 	for i := range files {
-		b := []byte((files[i].GetFileId().GetName()))
+		b := []byte(files[i].GetFileId().GetName())
 		bs := make([]byte, (files[i].Size - uint32(len(b))))
 		bs = append(bs, b...)
 		files[i].Size = uint32(len(bs))
@@ -1053,9 +1059,28 @@ func setDeletedAt(fname string, del int, d *database.Database) {
 		Update("deleted_at", del)
 }
 
+// setTombstone modifies clean_tombstone_set_at
 func setTombstone(fname string, tomb int, d *database.Database) {
 	m := &models.Metadata{}
 	d.DB.Model(&m).
 		Where("provided_name = ?", fname).
 		Update("clean_tombstone_set_at", tomb)
+}
+
+//  matchMetadata
+func matchMetadata(fms []models.FileMetadata, fmMap map[string]string) bool {
+
+	if len(fmMap) == 0 {
+		return true
+	} else if len(fms) != len(fmMap) {
+		return false
+	}
+
+	oldFms := make(map[string]string)
+	for _, fm := range fms {
+		oldFms[fm.Key] = fm.Value
+	}
+	eq := reflect.DeepEqual(oldFms, fmMap)
+
+	return eq
 }
