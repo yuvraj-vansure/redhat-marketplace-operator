@@ -28,6 +28,7 @@ import (
 	"github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/apis/filesender"
 	server "github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/cmd/server/start"
 	"github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/pkg/dqlite"
+	"github.com/redhat-marketplace/redhat-marketplace-operator/airgap/v2/pkg/scheduler"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
@@ -43,6 +44,9 @@ func main() {
 	var dir string
 	var verbose bool
 
+	var cronExpression string
+	var purgeBefore string
+	var purge bool
 	cmd := &cobra.Command{
 		Use:   "grpc-api",
 		Short: "Command to start up grpc server and database",
@@ -70,6 +74,14 @@ func main() {
 				return err
 			}
 
+			sfg := &scheduler.SchedulerConfig{
+				CronExpression: cronExpression,
+				PurgeBefore:    purgeBefore,
+				Purge:          purge,
+				Log:            log,
+				Fs:             fs,
+			}
+
 			s := grpc.NewServer()
 			bs := server.BaseServer{Log: log, FileStore: fs}
 
@@ -79,6 +91,9 @@ func main() {
 			adminserver.RegisterAdminServerServer(s, &server.AdminServerServer{B: bs})
 
 			go func() {
+				sfg.SetApp(cfg.GetApp())
+				sc := sfg.Schedule()
+				scheduler.Start(sc)
 				if err := s.Serve(lis); err != nil {
 					panic(err)
 				}
@@ -104,6 +119,10 @@ func main() {
 	join = flags.StringSliceP("join", "j", nil, "database addresses of existing nodes")
 	flags.StringVarP(&dir, "dir", "D", "/tmp/dqlite", "data directory")
 	flags.BoolVarP(&verbose, "verbose", "v", false, "verbose logging")
+
+	flags.StringVarP(&cronExpression, "cron", "c", "", "cron expression for scheduler")
+	flags.StringVar(&purgeBefore, "purgeBefore", "30", "")
+	flags.BoolVarP(&purge, "purge", "P", false, "purge flag")
 
 	cmd.MarkFlagRequired("api")
 	cmd.MarkFlagRequired("db")

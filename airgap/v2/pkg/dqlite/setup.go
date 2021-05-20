@@ -99,26 +99,13 @@ func (dc *DatabaseConfig) initDqlite() error {
 
 // TryMigrate ensures that only the leader performs database migration
 func (dc *DatabaseConfig) TryMigrate(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-	cli, err := dc.app.Leader(ctx)
+
+	isLeader, err := IsLeader(dc.app)
 	if err != nil {
-		dc.Log.Error(err, "Could not find leader for migration")
 		return err
 	}
 
-	dc.Log.Info("Verifying leadership before migration")
-	var leader *client.NodeInfo
-	for leader == nil {
-		leader, err = cli.Leader(ctx)
-		if err != nil {
-			dc.Log.Error(err, "Could not find leader for migration")
-			return err
-		}
-	}
-	dc.Log.Info("Leader elected")
-
-	if leader.Address != dc.app.Address() {
+	if !isLeader {
 		return nil
 	} else if dc.gormDB != nil {
 		dc.Log.Info("Performing migration")
@@ -126,6 +113,33 @@ func (dc *DatabaseConfig) TryMigrate(ctx context.Context) error {
 	} else {
 		return errors.New("GORM connection has not initialised: Connection of type *gorm.DB is nil")
 	}
+}
+
+func IsLeader(app *app.App) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	cli, err := app.Leader(ctx)
+
+	if err != nil {
+		return false, err
+	}
+	var leader *client.NodeInfo
+	for leader == nil {
+		leader, err = cli.Leader(ctx)
+		if err != nil {
+			return false, err
+		}
+	}
+	if leader.Address == app.Address() {
+		return true, nil
+	}
+	return false, nil
+}
+
+// GetApp returns dqlite-go application helper
+func (dc *DatabaseConfig) GetApp() *app.App {
+	return dc.app
 }
 
 // Close ensures all responsibilites for the node are handled gracefully on exit
