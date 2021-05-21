@@ -99,15 +99,17 @@ func (dc *DatabaseConfig) initDqlite() error {
 
 // TryMigrate ensures that only the leader performs database migration
 func (dc *DatabaseConfig) TryMigrate(ctx context.Context) error {
-
+	dc.Log.Info("Verifying leadership")
 	isLeader, err := IsLeader(dc.app)
 	if err != nil {
+		dc.Log.Error(err, "Could not find leader")
 		return err
 	}
 
 	if !isLeader {
 		return nil
 	} else if dc.gormDB != nil {
+		dc.Log.Info("Leader elected for migration", "Id", dc.app.ID(), "Address", dc.app.Address())
 		dc.Log.Info("Performing migration")
 		return dc.gormDB.AutoMigrate(&models.FileMetadata{}, &models.File{}, &models.Metadata{})
 	} else {
@@ -120,7 +122,6 @@ func IsLeader(app *app.App) (bool, error) {
 	defer cancel()
 
 	cli, err := app.Leader(ctx)
-
 	if err != nil {
 		return false, err
 	}

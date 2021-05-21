@@ -31,7 +31,6 @@ type SchedulerConfig struct {
 	CronExpression string
 	PurgeBefore    string
 	Purge          bool
-	LeaderAddr     string
 	Log            logr.Logger
 	Fs             *database.Database
 	app            *app.App
@@ -42,7 +41,7 @@ func (sfg *SchedulerConfig) SetApp(app *app.App) {
 }
 
 // Schedule creates and returns gocron.scheduler
-func (sfg *SchedulerConfig) Schedule() *gocron.Scheduler {
+func (sfg *SchedulerConfig) schedule() *gocron.Scheduler {
 	s := gocron.NewScheduler(time.UTC)
 	_, err := s.CronWithSeconds(sfg.CronExpression).Do(func() {
 		sfg.handler()
@@ -54,7 +53,8 @@ func (sfg *SchedulerConfig) Schedule() *gocron.Scheduler {
 }
 
 // Start starts all job for passed scheduler
-func Start(s *gocron.Scheduler) {
+func (sfg *SchedulerConfig) Start() {
+	s := sfg.schedule()
 	s.StartAsync()
 }
 

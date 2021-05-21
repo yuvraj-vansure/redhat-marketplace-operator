@@ -92,8 +92,7 @@ func main() {
 
 			go func() {
 				sfg.SetApp(cfg.GetApp())
-				sc := sfg.Schedule()
-				scheduler.Start(sc)
+				sfg.Start()
 				if err := s.Serve(lis); err != nil {
 					panic(err)
 				}
